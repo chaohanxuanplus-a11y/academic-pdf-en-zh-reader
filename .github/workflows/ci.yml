@@ -55,10 +55,36 @@ jobs:
         with:
           version: "0.12.6"
           enable-cache: false
+      - name: Prepare the restricted-token Python runtime
+        shell: pwsh
+        run: |
+          $source = (Resolve-Path -LiteralPath $env:pythonLocation).Path
+          $runtime = Join-Path $env:RUNNER_TEMP "restricted-cpython"
+          & robocopy.exe $source $runtime /E /COPY:DAT /DCOPY:DAT /R:1 /W:1 /NFL /NDL /NJH /NJS /NP | Out-Null
+          if ($LASTEXITCODE -ge 8) {
+            throw "CPython staging failed with robocopy exit code $LASTEXITCODE"
+          }
+          $sid = [Security.Principal.WindowsIdentity]::GetCurrent().User.Value
+          & icacls.exe $runtime /setowner "*$sid" /T /Q | Out-Null
+          if ($LASTEXITCODE -ne 0) {
+            throw "CPython owner normalization failed"
+          }
+          $grant = "*${sid}:(OI)(CI)RX"
+          & icacls.exe $runtime /inheritance:r /grant:r $grant /T /Q | Out-Null
+          if ($LASTEXITCODE -ne 0) {
+            throw "CPython ACL normalization failed"
+          }
+          $python = Join-Path $runtime "python.exe"
+          if (-not (Test-Path -LiteralPath $python -PathType Leaf)) {
+            throw "Staged CPython executable is missing"
+          }
+          Add-Content -LiteralPath $env:GITHUB_ENV -Value "ACADEMIC_PDF_CI_PYTHON=$python" -Encoding utf8
       - name: Synchronize the frozen environment
-        run: uv sync --frozen --all-groups --python "$env:pythonLocation\python.exe"
+        run: uv sync --frozen --all-groups --python "$env:ACADEMIC_PDF_CI_PYTHON"
+      - name: Smoke test the restricted Windows worker
+        run: uv run --python "$env:ACADEMIC_PDF_CI_PYTHON" --frozen pytest -q tests/security/test_windows_worker_limits.py::test_worker_uses_restricted_token_and_enforced_job_limits
       - name: Test the Windows worker and production pipeline
-        run: uv run --python "$env:pythonLocation\python.exe" --frozen pytest -q
+        run: uv run --python "$env:ACADEMIC_PDF_CI_PYTHON" --frozen pytest -q
 
   reuse:
     runs-on: ubuntu-24.04

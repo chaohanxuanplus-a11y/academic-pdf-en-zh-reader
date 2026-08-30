@@ -804,7 +804,7 @@ def test_probe_rejects_expected_limit_with_cleanup_failure_note(
         f"{failed_check} teardown failed: simulated AppContainer cleanup failure"
         in error
         for error in probe["errors"]
-    ), probe
+    ), probe["errors"][0] if probe["errors"] else repr(probe)
 
 
 @pytest.mark.parametrize("case", ["oversize_output", "malformed_output"])
@@ -823,8 +823,9 @@ def test_invalid_worker_output_is_rejected(
 def test_full_security_probe_is_truthful_and_fail_closed() -> None:
     probe = run_security_probe()
 
-    assert probe["minimum_contract"]["sha256_recomputed"] is True, probe
-    assert probe["minimum_contract"]["copy_size_verified"] is True, probe
+    first_error = probe["errors"][0] if probe["errors"] else repr(probe)
+    assert probe["minimum_contract"]["sha256_recomputed"] is True, first_error
+    assert probe["minimum_contract"]["copy_size_verified"] is True, first_error
     assert probe["provenance"]["subprocess_fallback"] is False
     profile_blocked = any(
         "CreateAppContainerProfile" in error and "0x80070002" in error

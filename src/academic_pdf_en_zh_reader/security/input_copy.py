@@ -254,7 +254,7 @@ def _create_private_directory(parent: Path) -> Path:
 
     descriptor = wintypes.LPVOID()
     sid = _current_user_sid()
-    sddl = f"O:{sid}D:P(A;;FA;;;{sid})"
+    sddl = f"O:{sid}D:P(A;OICI;FA;;;{sid})"
     if not _advapi32.ConvertStringSecurityDescriptorToSecurityDescriptorW(
         sddl, 1, ctypes.byref(descriptor), None
     ):

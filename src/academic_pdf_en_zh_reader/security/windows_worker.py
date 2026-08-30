@@ -3796,8 +3796,9 @@ def run_security_probe() -> dict[str, object]:
     handle_count_after: int | None = None
     try:
         with tempfile.TemporaryDirectory(prefix="worker-probe-source-") as source_root:
-            source = Path(source_root) / "paper.pdf"
-            sandbox_parent = Path(source_root) / "sandboxes"
+            source_root_path = Path(source_root).resolve(strict=True)
+            source = source_root_path / "paper.pdf"
+            sandbox_parent = source_root_path / "sandboxes"
             probe_bytes = b"%PDF-1.7\n%%EOF\n"
             source.write_bytes(probe_bytes)
             with copy_untrusted_input(source, temp_parent=sandbox_parent) as copied:
