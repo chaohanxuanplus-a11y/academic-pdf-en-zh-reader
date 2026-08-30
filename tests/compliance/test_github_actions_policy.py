@@ -65,6 +65,10 @@ class GitHubActionsPolicyTests(unittest.TestCase):
             'uv sync --frozen --all-groups --python "$env:pythonLocation\\python.exe"',
             windows,
         )
+        self.assertIn(
+            'uv run --python "$env:pythonLocation\\python.exe" --frozen pytest -q',
+            windows,
+        )
 
     def test_mutable_or_unreviewed_action_is_rejected(self) -> None:
         original = (ROOT / ".github" / "workflows" / "ci.yml").read_text(

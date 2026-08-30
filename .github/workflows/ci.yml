@@ -58,7 +58,7 @@ jobs:
       - name: Synchronize the frozen environment
         run: uv sync --frozen --all-groups --python "$env:pythonLocation\python.exe"
       - name: Test the Windows worker and production pipeline
-        run: uv run --frozen pytest -q
+        run: uv run --python "$env:pythonLocation\python.exe" --frozen pytest -q
 
   reuse:
     runs-on: ubuntu-24.04

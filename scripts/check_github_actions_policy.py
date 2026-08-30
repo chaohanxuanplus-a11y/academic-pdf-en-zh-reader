@@ -287,6 +287,7 @@ def validate(root: Path) -> tuple[str, ...]:
             "actions/setup-python@",
             "uv sync --frozen --all-groups",
             'uv sync --frozen --all-groups --python "$env:pythonLocation\\python.exe"',
+            'uv run --python "$env:pythonLocation\\python.exe" --frozen pytest -q',
             "pytest -q",
             "ruff check .",
             "ruff format --check .",
