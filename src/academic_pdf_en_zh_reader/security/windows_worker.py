@@ -168,6 +168,12 @@ if os.name == "nt":
     class _TOKEN_USER(ctypes.Structure):
         _fields_ = [("User", _SID_AND_ATTRIBUTES)]
 
+    class _TOKEN_GROUPS(ctypes.Structure):
+        _fields_ = [
+            ("GroupCount", wintypes.DWORD),
+            ("Groups", _SID_AND_ATTRIBUTES * 1),
+        ]
+
     class _SECURITY_CAPABILITIES(ctypes.Structure):
         _fields_ = [
             ("AppContainerSid", wintypes.LPVOID),
@@ -1444,11 +1450,32 @@ def _token_user_sid(token: object) -> tuple[object, object]:
     return buffer, token_user.User.Sid
 
 
+def _token_logon_sid(token: object) -> tuple[object, object]:
+    size = wintypes.DWORD()
+    _advapi32.GetTokenInformation(token, 28, None, 0, ctypes.byref(size))
+    if not size.value:
+        raise _win_error("GetTokenInformation(TokenLogonSid) sizing")
+    buffer = ctypes.create_string_buffer(size.value)
+    if not _advapi32.GetTokenInformation(
+        token,
+        28,
+        buffer,
+        size,
+        ctypes.byref(size),
+    ):
+        raise _win_error("GetTokenInformation(TokenLogonSid)")
+    token_groups = ctypes.cast(buffer, ctypes.POINTER(_TOKEN_GROUPS)).contents
+    if token_groups.GroupCount != 1 or not token_groups.Groups[0].Sid:
+        raise SandboxUnavailableError("source token has no unique logon SID")
+    return buffer, token_groups.Groups[0].Sid
+
+
 def _build_restricting_sids(token: object) -> _RestrictingSidContext:
-    # Restricted-token access checks need all four classes: the user owns the
-    # private workspace, while Windows/Python loader objects use these system SIDs.
+    # Restricted-token access checks need the private-workspace owner, the unique
+    # logon session, and the system SID classes used by Windows/Python loader objects.
     # Production never reaches this test-adapter path; it requires AppContainer.
     user_buffer, user_sid = _token_user_sid(token)
+    logon_buffer, logon_sid = _token_logon_sid(token)
     builtin_users_sid = wintypes.LPVOID()
     if not _advapi32.ConvertStringSidToSidW(
         _BUILTIN_USERS_SID,
@@ -1470,16 +1497,23 @@ def _build_restricting_sids(token: object) -> _RestrictingSidContext:
         _kernel32.LocalFree(builtin_users_sid)
         _kernel32.LocalFree(everyone_sid)
         raise _win_error("ConvertStringSidToSidW(Restricted Code)")
-    entries = (_SID_AND_ATTRIBUTES * 4)(
+    entries = (_SID_AND_ATTRIBUTES * 5)(
         _SID_AND_ATTRIBUTES(user_sid, 0),
+        _SID_AND_ATTRIBUTES(logon_sid, 0),
         _SID_AND_ATTRIBUTES(builtin_users_sid, 0),
         _SID_AND_ATTRIBUTES(everyone_sid, 0),
         _SID_AND_ATTRIBUTES(restricted_code_sid, 0),
     )
     return _RestrictingSidContext(
         entries=entries,
-        labels=("current_user", "builtin_users", "everyone", "restricted_code"),
-        keepalive=(user_buffer,),
+        labels=(
+            "current_user",
+            "logon_sid",
+            "builtin_users",
+            "everyone",
+            "restricted_code",
+        ),
+        keepalive=(user_buffer, logon_buffer),
         local_allocations=(builtin_users_sid, everyone_sid, restricted_code_sid),
     )
 

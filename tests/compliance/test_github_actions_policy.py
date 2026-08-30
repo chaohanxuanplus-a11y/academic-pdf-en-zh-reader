@@ -62,20 +62,11 @@ class GitHubActionsPolicyTests(unittest.TestCase):
             windows,
         )
         self.assertIn(
-            "robocopy.exe $source $runtime /E /COPY:DAT /DCOPY:DAT",
+            'uv sync --frozen --all-groups --python "$env:pythonLocation\\python.exe"',
             windows,
         )
         self.assertIn(
-            "icacls.exe $runtime /inheritance:r /grant:r $grant /T /Q",
-            windows,
-        )
-        self.assertIn("*${sid}:(OI)(CI)RX", windows)
-        self.assertIn(
-            'uv sync --frozen --all-groups --python "$env:ACADEMIC_PDF_CI_PYTHON"',
-            windows,
-        )
-        self.assertIn(
-            'uv run --python "$env:ACADEMIC_PDF_CI_PYTHON" --frozen pytest -q',
+            'uv run --python "$env:pythonLocation\\python.exe" --frozen pytest -q',
             windows,
         )
         self.assertIn(
@@ -83,7 +74,6 @@ class GitHubActionsPolicyTests(unittest.TestCase):
             "test_worker_uses_restricted_token_and_enforced_job_limits",
             windows,
         )
-        self.assertNotIn('--python "$env:pythonLocation\\python.exe"', windows)
 
     def test_mutable_or_unreviewed_action_is_rejected(self) -> None:
         original = (ROOT / ".github" / "workflows" / "ci.yml").read_text(

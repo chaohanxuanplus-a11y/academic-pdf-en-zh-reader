@@ -286,11 +286,8 @@ def validate(root: Path) -> tuple[str, ...]:
         ".github/workflows/ci.yml": (
             "actions/setup-python@",
             "uv sync --frozen --all-groups",
-            "robocopy.exe $source $runtime /E /COPY:DAT /DCOPY:DAT",
-            "icacls.exe $runtime /inheritance:r /grant:r $grant /T /Q",
-            "ACADEMIC_PDF_CI_PYTHON=$python",
-            'uv sync --frozen --all-groups --python "$env:ACADEMIC_PDF_CI_PYTHON"',
-            'uv run --python "$env:ACADEMIC_PDF_CI_PYTHON" --frozen pytest -q',
+            'uv sync --frozen --all-groups --python "$env:pythonLocation\\python.exe"',
+            'uv run --python "$env:pythonLocation\\python.exe" --frozen pytest -q',
             "test_worker_uses_restricted_token_and_enforced_job_limits",
             "pytest -q",
             "ruff check .",

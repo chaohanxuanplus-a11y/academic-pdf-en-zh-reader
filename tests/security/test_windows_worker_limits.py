@@ -85,6 +85,10 @@ def test_worker_uses_restricted_token_and_enforced_job_limits(
         "SeChangeNotifyPrivilege"
     }
     assert result.provenance["restricted_token"] is True
+    token_origin = result.provenance["restricted_token_origin"]
+    assert token_origin == "inherited_restricted_token_duplicated" or (
+        "logon_sid" in token_origin
+    )
     assert result.provenance["created_suspended_before_job_assignment"] is True
     assert result.provenance["kill_on_job_close"] is True
     assert result.provenance["active_process_limit"] == 1
@@ -283,11 +287,12 @@ def test_repeated_restricted_workers_do_not_leak_parent_handles(
 def test_unrestricted_token_branch_passes_required_restricting_sids(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    entries = (windows_worker._SID_AND_ATTRIBUTES * 4)()
+    entries = (windows_worker._SID_AND_ATTRIBUTES * 5)()
     restricting = windows_worker._RestrictingSidContext(
         entries=entries,
         labels=(
             "current_user",
+            "logon_sid",
             "builtin_users",
             "everyone",
             "restricted_code",
@@ -322,11 +327,12 @@ def test_unrestricted_token_branch_passes_required_restricting_sids(
     assert token.value == 4242
     assert labels == (
         "current_user",
+        "logon_sid",
         "builtin_users",
         "everyone",
         "restricted_code",
     )
-    assert captured["restricted_sid_count"] == 4
+    assert captured["restricted_sid_count"] == 5
     assert bool(captured["restricting_sids"])
 
 
@@ -348,6 +354,7 @@ def test_ordinary_token_dispatch_does_not_depend_on_restricted_parent(
         assert getattr(token, "value", token) == source.value
         return restricted, (
             "current_user",
+            "logon_sid",
             "builtin_users",
             "everyone",
             "restricted_code",
@@ -373,7 +380,8 @@ def test_ordinary_token_dispatch_does_not_depend_on_restricted_parent(
     assert actual.value == restricted.value
     assert privileges == []
     assert (
-        "RestrictingSids=current_user,builtin_users,everyone,restricted_code" in origin
+        "RestrictingSids=current_user,logon_sid,builtin_users,everyone,restricted_code"
+        in origin
     )
 
 
