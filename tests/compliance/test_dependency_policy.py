@@ -183,6 +183,11 @@ class RepositoryComplianceTests(unittest.TestCase):
         self.assertEqual(__version__, cff_values["version"])
         self.assertNotIn("repository-code", cff_values)
 
+    def test_ci_pytest_can_import_repository_scripts(self) -> None:
+        pyproject = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+        pythonpath = pyproject["tool"]["pytest"]["ini_options"]["pythonpath"]
+        self.assertIn(".", pythonpath)
+
     def test_repository_text_does_not_expose_a_local_windows_profile(self) -> None:
         ignored_parts = {
             ".git",

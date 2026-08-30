@@ -30,7 +30,7 @@ package = false
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "--strict-config --strict-markers --import-mode=importlib"
-pythonpath = ["src"]
+pythonpath = ["src", "."]
 
 [tool.ruff]
 target-version = "py312"
