@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "tools": [
+    {
+      "name": "uv",
+      "version": "0.12.6",
+      "license": "MIT OR Apache-2.0",
+      "source": "https://pypi.org/project/uv/0.12.6/",
+      "license_sources": [
+        "https://github.com/astral-sh/uv/blob/main/LICENSE-MIT",
+        "https://github.com/astral-sh/uv/blob/main/LICENSE-APACHE"
+      ],
+      "scope": "workspace-local dependency resolver",
+      "included_in_release": false,
+      "reviewed_on": "2026-08-27"
+    },
+    {
+      "name": "reuse",
+      "version": "6.2.0",
+      "license": "GPL-3.0-or-later with separately licensed bundled materials",
+      "source": "https://pypi.org/project/reuse/6.2.0/",
+      "license_sources": [
+        "https://github.com/fsfe/reuse-tool#licensing"
+      ],
+      "scope": "isolated development and CI compliance checker",
+      "included_in_release": false,
+      "reviewed_on": "2026-08-27"
+    }
+  ]
+}

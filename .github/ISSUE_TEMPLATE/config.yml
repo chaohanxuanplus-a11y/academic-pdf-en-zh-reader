@@ -1,0 +1,7 @@
+# SPDX-FileCopyrightText: 2026 academic-pdf-en-zh-reader contributors
+# SPDX-License-Identifier: Apache-2.0
+
+# Public intake stays closed until real private security and conduct channels
+# have passed the release-readiness gate. Do not invent a contact here.
+blank_issues_enabled: false
+contact_links: []

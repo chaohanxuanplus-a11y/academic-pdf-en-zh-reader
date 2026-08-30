@@ -1,0 +1,157 @@
+{
+  "schema_version": 1,
+  "fixture_id": "single-column",
+  "title": "Synthetic Single-Column Calibration Study",
+  "license": "CC0-1.0",
+  "creator": "academic-pdf-en-zh-reader contributors",
+  "source": "project-authored synthetic content",
+  "uses_system_fonts": false,
+  "uses_randomness": false,
+  "uses_current_time": false,
+  "pages": [
+    {
+      "page_number": 1,
+      "size": "A4",
+      "orientation": "portrait",
+      "bands": [
+        {
+          "id": "p1-header",
+          "bbox_mm": [18, 250, 192, 281],
+          "column_count": 1,
+          "columns": [
+            {
+              "id": "p1-header-c1",
+              "bbox_mm": [18, 250, 192, 281],
+              "blocks": [
+                {
+                  "id": "p1-title",
+                  "role": "title",
+                  "bbox_mm": [20, 263, 190, 280],
+                  "lines": [
+                    "A Synthetic Study of Stable Paper Sensor Calibration"
+                  ]
+                },
+                {
+                  "id": "p1-author",
+                  "role": "author",
+                  "bbox_mm": [20, 251, 190, 260],
+                  "lines": ["A. Example and B. Example"]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "p1-summary",
+          "bbox_mm": [22, 204, 188, 246],
+          "column_count": 1,
+          "columns": [
+            {
+              "id": "p1-summary-c1",
+              "bbox_mm": [22, 204, 188, 246],
+              "blocks": [
+                {
+                  "id": "p1-abstract-heading",
+                  "role": "abstract_heading",
+                  "bbox_mm": [22, 237, 188, 246],
+                  "lines": ["Abstract"]
+                },
+                {
+                  "id": "p1-abstract",
+                  "role": "abstract",
+                  "bbox_mm": [22, 218, 188, 236],
+                  "lines": [
+                    "We evaluate a fully synthetic paper sensor under fixed laboratory conditions.",
+                    "The invented measurements support deterministic layout tests only."
+                  ]
+                },
+                {
+                  "id": "p1-keywords",
+                  "role": "keywords",
+                  "bbox_mm": [22, 205, 188, 216],
+                  "lines": ["Keywords: synthetic fixture; calibration; deterministic PDF"]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "p1-body",
+          "bbox_mm": [22, 24, 188, 199],
+          "column_count": 1,
+          "columns": [
+            {
+              "id": "p1-c1",
+              "bbox_mm": [22, 24, 188, 199],
+              "blocks": [
+                {
+                  "id": "p1-section-1",
+                  "role": "section_heading",
+                  "bbox_mm": [22, 187, 188, 198],
+                  "lines": ["1. Methods"]
+                },
+                {
+                  "id": "p1-body-1",
+                  "role": "body",
+                  "bbox_mm": [22, 153, 188, 185],
+                  "lines": [
+                    "Three fabricated samples were assigned fixed values of 3, 5, and 7 units.",
+                    "No observation represents a person, publication, or real experiment.",
+                    "Every sentence was written specifically for this test fixture."
+                  ]
+                },
+                {
+                  "id": "p1-section-2",
+                  "role": "section_heading",
+                  "bbox_mm": [22, 137, 188, 150],
+                  "lines": ["2. Conclusion"]
+                },
+                {
+                  "id": "p1-body-2",
+                  "role": "body",
+                  "bbox_mm": [22, 104, 188, 135],
+                  "lines": [
+                    "The fixed sequence preserves reading order and a stable left boundary.",
+                    "This conclusion exists only to exercise title, summary, and body roles."
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "truth": {
+    "band_ids": ["p1-header", "p1-summary", "p1-body"],
+    "column_ids": ["p1-header-c1", "p1-summary-c1", "p1-c1"],
+    "roles": {
+      "p1-title": "title",
+      "p1-author": "author",
+      "p1-abstract-heading": "abstract_heading",
+      "p1-abstract": "abstract",
+      "p1-keywords": "keywords",
+      "p1-section-1": "section_heading",
+      "p1-body-1": "body",
+      "p1-section-2": "section_heading",
+      "p1-body-2": "body"
+    },
+    "reading_order": [
+      "p1-title",
+      "p1-author",
+      "p1-abstract-heading",
+      "p1-abstract",
+      "p1-keywords",
+      "p1-section-1",
+      "p1-body-1",
+      "p1-section-2",
+      "p1-body-2"
+    ],
+    "cross_boundary_units": [],
+    "scenario_expectations": [
+      "single_column",
+      "leader_eligible_blocks",
+      "stable_column_left_edge"
+    ]
+  }
+}

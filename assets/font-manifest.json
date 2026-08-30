@@ -1,0 +1,190 @@
+{
+  "embedding_probe": {
+    "embedded_font_count": 3,
+    "embedded_roles": {
+      "body": true,
+      "heading": true,
+      "symbols": true
+    },
+    "errors": [],
+    "expected_text_sha256": "42e7cc9e638bec5cfd237c254cea4d78e54e91eff724ad2e6ca2d26a2827ea7c",
+    "extracted_text_matches": true,
+    "font_hashes": {
+      "body": "ce123d40ed0f7167e6ad4b8626d5ba54ed0acf706f22f7aafdf6010c3029e147",
+      "heading": "c5964aba08d1215f658d78494c6af34cbb9323ecf46e519c2776474e57581fb9",
+      "symbols": "c4a0a80f0041ce4be81e2478faad22776d23edb98ae3f0d19bd37044820ecf9d"
+    },
+    "max_width_delta_pt": 0.0,
+    "page_count": 1,
+    "pdf_sha256": "3ba6984b07d8291c7bf57a2fbf5af14ec94de4bc2d3c4b987a9f03123d2e318c",
+    "pdfium_version": "153.0.7999.0",
+    "probe_contract_hash": "1bb9566cff0b9ccc2ca75228ac93e397125c7e2a4ccbb1633a293f418a7afad0",
+    "pypdf_version": "6.16.2",
+    "pypdfium2_version": "5.13.0",
+    "render_nonwhite_ratio": 0.004637413219893461,
+    "render_nonwhite_ratio_by_role": {
+      "body": 0.22600446428571427,
+      "heading": 0.3150027056277056,
+      "symbols": 0.2175824175824176
+    },
+    "reportlab_version": "5.0.1",
+    "status": "passed",
+    "to_unicode_roles": {
+      "body": true,
+      "heading": true,
+      "symbols": true
+    },
+    "used_unapproved_fonts": [],
+    "width_measurements_match": true
+  },
+  "fonts": [
+    {
+      "archive_member": "Variable/TTF/Subset/NotoSerifSC-VF.ttf",
+      "archive_name": "03_NotoSerifCJK-TTF-VF.zip",
+      "cmap_size": 30928,
+      "copyright": "© 2017-2024 Adobe (http://www.adobe.com/).",
+      "expected_family": "Noto Serif SC",
+      "expected_subfamily": "Regular",
+      "face_count": 1,
+      "face_index": null,
+      "family": "Noto Serif SC",
+      "format": "ttf",
+      "git_blob_sha1": "2c24ee5f827742d5a82ff41a9abf83af01e1dca0",
+      "license": "OFL-1.1",
+      "license_url": "https://raw.githubusercontent.com/googlefonts/noto-cjk/Serif2.003/Serif/LICENSE",
+      "modified": true,
+      "outline_format": "glyf",
+      "path": "assets/fonts/NotoSerifSC-Regular.ttf",
+      "postscript_name": "NotoSerifSC-Regular",
+      "reserved_font_names": [
+        "Source"
+      ],
+      "role": "body",
+      "sha256": "ce123d40ed0f7167e6ad4b8626d5ba54ed0acf706f22f7aafdf6010c3029e147",
+      "size": 14851736,
+      "source_binary": {
+        "filename": "NotoSerifSC-VF.ttf",
+        "git_blob_sha1": "914d51db3ef9841a98ccb8f48db9e8bddb0b0d72",
+        "sha256": "5326cfb097e3ab26fcb39329752b5c0a439bf8d5c4649520e4b492939c352a09",
+        "size": 25125232
+      },
+      "source_commit": "9b0f1436e455d902de067a2501422e5dc71ad16b",
+      "source_kind": "derived_variable_instance",
+      "source_path": "Serif/Variable/TTF/Subset/NotoSerifSC-VF.ttf",
+      "source_release": "https://github.com/googlefonts/noto-cjk/releases/tag/Serif2.003",
+      "source_repository": "https://github.com/googlefonts/noto-cjk",
+      "source_tag": "Serif2.003",
+      "source_url": "https://raw.githubusercontent.com/googlefonts/noto-cjk/Serif2.003/Serif/Variable/TTF/Subset/NotoSerifSC-VF.ttf",
+      "spdx_license": "OFL-1.1-RFN",
+      "subfamily": "Regular",
+      "transformation": {
+        "axis_location": {
+          "wght": 400
+        },
+        "operation": "instantiate_variable_font",
+        "recalc_timestamp": false,
+        "static": true,
+        "tool": "fonttools",
+        "tool_version": "4.63.0",
+        "update_name_table": true
+      },
+      "typographic_family": "Noto Serif SC",
+      "typographic_subfamily": "Regular",
+      "units_per_em": 1000
+    },
+    {
+      "archive_member": "Variable/TTF/Subset/NotoSerifSC-VF.ttf",
+      "archive_name": "03_NotoSerifCJK-TTF-VF.zip",
+      "cmap_size": 30928,
+      "copyright": "© 2017-2024 Adobe (http://www.adobe.com/).",
+      "expected_family": "Noto Serif SC",
+      "expected_subfamily": "SemiBold",
+      "face_count": 1,
+      "face_index": null,
+      "family": "Noto Serif SC",
+      "format": "ttf",
+      "git_blob_sha1": "dda373849acfb9b5340fb9676bacac197fc43d65",
+      "license": "OFL-1.1",
+      "license_url": "https://raw.githubusercontent.com/googlefonts/noto-cjk/Serif2.003/Serif/LICENSE",
+      "modified": true,
+      "outline_format": "glyf",
+      "path": "assets/fonts/NotoSerifSC-SemiBold.ttf",
+      "postscript_name": "NotoSerifSC-SemiBold",
+      "reserved_font_names": [
+        "Source"
+      ],
+      "role": "heading",
+      "sha256": "c5964aba08d1215f658d78494c6af34cbb9323ecf46e519c2776474e57581fb9",
+      "size": 14851208,
+      "source_binary": {
+        "filename": "NotoSerifSC-VF.ttf",
+        "git_blob_sha1": "914d51db3ef9841a98ccb8f48db9e8bddb0b0d72",
+        "sha256": "5326cfb097e3ab26fcb39329752b5c0a439bf8d5c4649520e4b492939c352a09",
+        "size": 25125232
+      },
+      "source_commit": "9b0f1436e455d902de067a2501422e5dc71ad16b",
+      "source_kind": "derived_variable_instance",
+      "source_path": "Serif/Variable/TTF/Subset/NotoSerifSC-VF.ttf",
+      "source_release": "https://github.com/googlefonts/noto-cjk/releases/tag/Serif2.003",
+      "source_repository": "https://github.com/googlefonts/noto-cjk",
+      "source_tag": "Serif2.003",
+      "source_url": "https://raw.githubusercontent.com/googlefonts/noto-cjk/Serif2.003/Serif/Variable/TTF/Subset/NotoSerifSC-VF.ttf",
+      "spdx_license": "OFL-1.1-RFN",
+      "subfamily": "SemiBold",
+      "transformation": {
+        "axis_location": {
+          "wght": 600
+        },
+        "operation": "instantiate_variable_font",
+        "recalc_timestamp": false,
+        "static": true,
+        "tool": "fonttools",
+        "tool_version": "4.63.0",
+        "update_name_table": true
+      },
+      "typographic_family": "Noto Serif SC",
+      "typographic_subfamily": "SemiBold",
+      "units_per_em": 1000
+    },
+    {
+      "archive_member": "NotoSansSymbols2/unhinted/ttf/NotoSansSymbols2-Regular.ttf",
+      "archive_name": "NotoSansSymbols2-v2.008.zip",
+      "archive_sha256": "346c930bbe8eb946701a05c54e9c11a2094dee1d93c387bf1771c0a3e335688f",
+      "archive_size": 2331441,
+      "cmap_size": 2641,
+      "copyright": "Copyright 2022 The Noto Project Authors (https://github.com/notofonts/symbols)",
+      "expected_family": "Noto Sans Symbols 2",
+      "expected_subfamily": "Regular",
+      "face_count": 1,
+      "face_index": null,
+      "family": "Noto Sans Symbols 2",
+      "format": "ttf",
+      "git_blob_sha1": "a0a8cfe09d1b8bc0a0c2b43f8279fa392e9eb411",
+      "license": "OFL-1.1",
+      "license_url": "https://raw.githubusercontent.com/notofonts/symbols/NotoSansSymbols2-v2.008/OFL.txt",
+      "modified": false,
+      "outline_format": "glyf",
+      "path": "assets/fonts/NotoSansSymbols2-Regular.ttf",
+      "postscript_name": "NotoSansSymbols2-Regular",
+      "reserved_font_names": [],
+      "role": "symbols",
+      "sha256": "c4a0a80f0041ce4be81e2478faad22776d23edb98ae3f0d19bd37044820ecf9d",
+      "size": 671568,
+      "source_commit": "25b00f0d3f40873a005287514ba2a48558655314",
+      "source_kind": "github_release_archive",
+      "source_path": "fonts/NotoSansSymbols2/unhinted/ttf/NotoSansSymbols2-Regular.ttf",
+      "source_release": "https://github.com/notofonts/symbols/releases/tag/NotoSansSymbols2-v2.008",
+      "source_repository": "https://github.com/notofonts/symbols",
+      "source_tag": "NotoSansSymbols2-v2.008",
+      "source_url": "https://github.com/notofonts/symbols/releases/download/NotoSansSymbols2-v2.008/NotoSansSymbols2-v2.008.zip",
+      "spdx_license": "OFL-1.1",
+      "subfamily": "Regular",
+      "typographic_family": "Noto Sans Symbols 2",
+      "typographic_subfamily": "Regular",
+      "units_per_em": 1000
+    }
+  ],
+  "license": "OFL-1.1",
+  "schema_version": 1,
+  "system_font_fallback": false
+}

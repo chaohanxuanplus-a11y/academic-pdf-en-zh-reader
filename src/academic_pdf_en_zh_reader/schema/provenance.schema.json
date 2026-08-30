@@ -1,0 +1,54 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:academic-pdf-en-zh-reader:schema:provenance:1.0.0",
+  "title": "Source and runtime provenance",
+  "x-spdx-copyright": "2026 academic-pdf-en-zh-reader contributors",
+  "x-spdx-license-identifier": "Apache-2.0",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version", "artifact_kind", "source_sha256",
+    "normalized_pdf_sha256", "config_hash", "code_version",
+    "dependency_lock_sha256", "font_manifest_hash", "runtime_fingerprint",
+    "upstreams"
+  ],
+  "properties": {
+    "schema_version": {"const": "1.0.0"},
+    "artifact_kind": {"const": "provenance"},
+    "source_sha256": {"$ref": "#/$defs/sha256"},
+    "normalized_pdf_sha256": {"$ref": "#/$defs/sha256"},
+    "config_hash": {"$ref": "#/$defs/sha256"},
+    "code_version": {"type": "string", "minLength": 1},
+    "dependency_lock_sha256": {"$ref": "#/$defs/sha256"},
+    "font_manifest_hash": {"$ref": "#/$defs/sha256"},
+    "runtime_fingerprint": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["python", "unicode", "platform"],
+      "properties": {
+        "python": {"type": "string", "minLength": 1},
+        "unicode": {"type": "string", "minLength": 1},
+        "platform": {"type": "string", "minLength": 1},
+        "worker_runtime": {"$ref": "#/$defs/sha256"}
+      }
+    },
+    "upstreams": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name", "version", "source"],
+        "properties": {
+          "name": {"type": "string", "minLength": 1},
+          "version": {"type": "string", "minLength": 1},
+          "source": {"type": "string", "minLength": 1}
+        }
+      }
+    },
+    "sandbox": {
+      "type": "object",
+      "additionalProperties": {"type": ["string", "boolean", "integer", "null"]}
+    }
+  },
+  "$defs": {"sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}}
+}

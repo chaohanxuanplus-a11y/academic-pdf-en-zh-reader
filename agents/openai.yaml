@@ -1,0 +1,9 @@
+# SPDX-FileCopyrightText: 2026 academic-pdf-en-zh-reader contributors
+# SPDX-License-Identifier: Apache-2.0
+
+interface:
+  display_name: "Academic PDF English-Chinese Reader"
+  short_description: "Turn a born-digital English paper into an A3 bilingual PDF"
+  default_prompt: "Use $academic-pdf-en-zh-reader to normalize my uploaded born-digital English academic PDF and create a validated A3 bilingual reading PDF."
+policy:
+  allow_implicit_invocation: true

@@ -1,0 +1,140 @@
+{
+  "schema_version": 1,
+  "fixture_id": "two-column",
+  "title": "Synthetic Two-Column Note",
+  "license": "CC0-1.0",
+  "creator": "academic-pdf-en-zh-reader contributors",
+  "source": "project-authored synthetic content",
+  "uses_system_fonts": false,
+  "uses_randomness": false,
+  "uses_current_time": false,
+  "pages": [
+    {
+      "page_number": 1,
+      "size": "A4",
+      "orientation": "portrait",
+      "bands": [
+        {
+          "id": "p1-header",
+          "bbox_mm": [18, 246, 192, 281],
+          "column_count": 1,
+          "columns": [
+            {
+              "id": "p1-header-c1",
+              "bbox_mm": [18, 246, 192, 281],
+              "blocks": [
+                {
+                  "id": "p1-title",
+                  "role": "title",
+                  "bbox_mm": [20, 260, 190, 280],
+                  "lines": ["Deterministic Comparison in Two Synthetic Columns"]
+                },
+                {
+                  "id": "p1-keywords",
+                  "role": "keywords",
+                  "bbox_mm": [20, 248, 190, 258],
+                  "lines": ["Keywords: column ratio; order; synthetic text"]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "p1-body",
+          "bbox_mm": [18, 24, 192, 238],
+          "column_count": 2,
+          "columns": [
+            {
+              "id": "p1-c1",
+              "bbox_mm": [18, 24, 101, 238],
+              "blocks": [
+                {
+                  "id": "p1-c1-section",
+                  "role": "section_heading",
+                  "bbox_mm": [18, 224, 101, 237],
+                  "lines": ["1. Synthetic setup"]
+                },
+                {
+                  "id": "p1-c1-body-1",
+                  "role": "body",
+                  "bbox_mm": [18, 170, 101, 221],
+                  "lines": [
+                    "The first column defines a fixed sequence.",
+                    "Every value is chosen before generation.",
+                    "No external corpus supplies the wording."
+                  ]
+                },
+                {
+                  "id": "p1-c1-body-2",
+                  "role": "body",
+                  "bbox_mm": [18, 115, 101, 166],
+                  "lines": [
+                    "The gutter remains empty and measurable.",
+                    "The column uses one stable left edge."
+                  ]
+                }
+              ]
+            },
+            {
+              "id": "p1-c2",
+              "bbox_mm": [109, 24, 192, 238],
+              "blocks": [
+                {
+                  "id": "p1-c2-section",
+                  "role": "section_heading",
+                  "bbox_mm": [109, 224, 192, 237],
+                  "lines": ["2. Synthetic result"]
+                },
+                {
+                  "id": "p1-c2-body-1",
+                  "role": "body",
+                  "bbox_mm": [109, 170, 192, 221],
+                  "lines": [
+                    "The second column follows the first one.",
+                    "Its width matches the stated topology.",
+                    "The fixture contains no hidden sample."
+                  ]
+                },
+                {
+                  "id": "p1-c2-body-2",
+                  "role": "body",
+                  "bbox_mm": [109, 115, 192, 166],
+                  "lines": [
+                    "A stable order supports extraction tests.",
+                    "Two-column bands never request leaders."
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "truth": {
+    "band_ids": ["p1-header", "p1-body"],
+    "column_ids": ["p1-header-c1", "p1-c1", "p1-c2"],
+    "roles": {
+      "p1-title": "title",
+      "p1-keywords": "keywords",
+      "p1-c1-section": "section_heading",
+      "p1-c1-body-1": "body",
+      "p1-c1-body-2": "body",
+      "p1-c2-section": "section_heading",
+      "p1-c2-body-1": "body",
+      "p1-c2-body-2": "body"
+    },
+    "reading_order": [
+      "p1-title",
+      "p1-keywords",
+      "p1-c1-section",
+      "p1-c1-body-1",
+      "p1-c1-body-2",
+      "p1-c2-section",
+      "p1-c2-body-1",
+      "p1-c2-body-2"
+    ],
+    "cross_boundary_units": [],
+    "scenario_expectations": ["two_equal_columns", "no_leaders"]
+  }
+}

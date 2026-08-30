@@ -1,0 +1,65 @@
+# SPDX-FileCopyrightText: 2026 academic-pdf-en-zh-reader contributors
+# SPDX-License-Identifier: Apache-2.0
+
+version = 1
+
+[[annotations]]
+path = [
+  ".python-version",
+  "NOTICE",
+  "assets/branding/brand-manifest.json",
+  "compliance/dependencies.json",
+  "compliance/external-tools.json",
+  "compliance/github-actions.json",
+  "compliance/project-identity.json",
+  "compliance/release-status.json",
+  "docs/superpowers/plans/2026-08-27-academic-pdf-bilingual-reader-implementation-plan.md",
+  "docs/superpowers/specs/2026-08-27-academic-pdf-bilingual-reader-skill-design.md",
+  "tests/visual/expected/.gitkeep",
+  "uv.lock",
+]
+precedence = "override"
+SPDX-FileCopyrightText = "2026 academic-pdf-en-zh-reader contributors"
+SPDX-License-Identifier = "Apache-2.0"
+
+[[annotations]]
+path = "assets/branding/hanhai-wencai.png"
+precedence = "override"
+SPDX-FileCopyrightText = "NOASSERTION"
+SPDX-License-Identifier = "LicenseRef-HanhaiWencai-Unreleased"
+
+[[annotations]]
+path = "assets/font-manifest.json"
+precedence = "override"
+SPDX-FileCopyrightText = "2026 academic-pdf-en-zh-reader contributors"
+SPDX-License-Identifier = "Apache-2.0"
+
+[[annotations]]
+path = [
+  "tests/fixtures-synthetic/specs/*.json",
+  "tests/integration/fixtures/prompt-injection.json",
+]
+precedence = "override"
+SPDX-FileCopyrightText = "2026 academic-pdf-en-zh-reader contributors"
+SPDX-License-Identifier = "CC0-1.0"
+
+[[annotations]]
+path = "src/academic_pdf_en_zh_reader/schema/*.schema.json"
+precedence = "override"
+SPDX-FileCopyrightText = "2026 academic-pdf-en-zh-reader contributors"
+SPDX-License-Identifier = "Apache-2.0"
+
+[[annotations]]
+path = [
+  "assets/fonts/NotoSerifSC-Regular.ttf",
+  "assets/fonts/NotoSerifSC-SemiBold.ttf",
+]
+precedence = "override"
+SPDX-FileCopyrightText = "2017-2024 Adobe (http://www.adobe.com/)"
+SPDX-License-Identifier = "OFL-1.1-RFN"
+
+[[annotations]]
+path = "assets/fonts/NotoSansSymbols2-Regular.ttf"
+precedence = "override"
+SPDX-FileCopyrightText = "2022 The Noto Project Authors (https://github.com/notofonts/symbols)"
+SPDX-License-Identifier = "OFL-1.1"

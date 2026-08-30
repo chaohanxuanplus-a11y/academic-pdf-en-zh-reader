@@ -1,0 +1,49 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:academic-pdf-en-zh-reader:schema:units:1.0.0",
+  "title": "Merged semantic units",
+  "x-spdx-copyright": "2026 academic-pdf-en-zh-reader contributors",
+  "x-spdx-license-identifier": "Apache-2.0",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version", "artifact_kind", "source_sha256",
+    "normalized_pdf_sha256", "units"
+  ],
+  "properties": {
+    "schema_version": {"const": "1.0.0"},
+    "artifact_kind": {"const": "units"},
+    "source_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "normalized_pdf_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "units": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "role", "reading_order", "source_text", "confidence_ppm", "fragments"],
+        "properties": {
+          "id": {"type": "string", "minLength": 1},
+          "role": {"enum": ["title", "abstract", "keywords", "heading", "body", "figure-caption", "table-caption", "footnote"]},
+          "reading_order": {"type": "integer", "minimum": 0},
+          "source_text": {"type": "string"},
+          "confidence_ppm": {"type": "integer", "minimum": 0, "maximum": 1000000},
+          "fragments": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["page_number", "block_id", "source_char_start", "source_char_end"],
+              "properties": {
+                "page_number": {"type": "integer", "minimum": 1},
+                "block_id": {"type": "string", "minLength": 1},
+                "source_char_start": {"type": "integer", "minimum": 0},
+                "source_char_end": {"type": "integer", "minimum": 1}
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

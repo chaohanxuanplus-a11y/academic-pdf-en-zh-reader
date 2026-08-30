@@ -1,0 +1,139 @@
+{
+  "schema_version": 1,
+  "fixture_id": "cross-column-paragraph",
+  "title": "Synthetic Paragraph Crossing a Column Boundary",
+  "license": "CC0-1.0",
+  "creator": "academic-pdf-en-zh-reader contributors",
+  "source": "project-authored synthetic content",
+  "uses_system_fonts": false,
+  "uses_randomness": false,
+  "uses_current_time": false,
+  "pages": [
+    {
+      "page_number": 1,
+      "size": "A4",
+      "orientation": "portrait",
+      "bands": [
+        {
+          "id": "p1-header",
+          "bbox_mm": [18, 250, 192, 281],
+          "column_count": 1,
+          "columns": [
+            {
+              "id": "p1-header-c1",
+              "bbox_mm": [18, 250, 192, 281],
+              "blocks": [
+                {
+                  "id": "p1-title",
+                  "role": "title",
+                  "bbox_mm": [20, 260, 190, 280],
+                  "lines": ["A Synthetic Paragraph Crossing Two Columns"]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "p1-body",
+          "bbox_mm": [18, 24, 192, 242],
+          "column_count": 2,
+          "columns": [
+            {
+              "id": "p1-c1",
+              "bbox_mm": [18, 24, 101, 242],
+              "blocks": [
+                {
+                  "id": "p1-c1-section",
+                  "role": "section_heading",
+                  "bbox_mm": [18, 226, 101, 241],
+                  "lines": ["1. Continuous observation"]
+                },
+                {
+                  "id": "p1-c1-body-1",
+                  "role": "body",
+                  "bbox_mm": [18, 170, 101, 223],
+                  "lines": [
+                    "A fixed synthetic signal rises in three steps.",
+                    "The first paragraph ends normally."
+                  ]
+                },
+                {
+                  "id": "p1-c1-body-2a",
+                  "role": "body",
+                  "bbox_mm": [18, 35, 101, 82],
+                  "lines": [
+                    "The final paragraph starts near the column foot",
+                    "and continues without a semantic break"
+                  ]
+                }
+              ]
+            },
+            {
+              "id": "p1-c2",
+              "bbox_mm": [109, 24, 192, 242],
+              "blocks": [
+                {
+                  "id": "p1-c2-body-2b",
+                  "role": "body",
+                  "bbox_mm": [109, 202, 192, 240],
+                  "lines": [
+                    "at the top of the second column, where the same",
+                    "synthetic paragraph reaches its fixed conclusion."
+                  ]
+                },
+                {
+                  "id": "p1-c2-section",
+                  "role": "section_heading",
+                  "bbox_mm": [109, 182, 192, 198],
+                  "lines": ["2. Separate conclusion"]
+                },
+                {
+                  "id": "p1-c2-body-3",
+                  "role": "body",
+                  "bbox_mm": [109, 130, 192, 179],
+                  "lines": [
+                    "The following block is a new semantic unit.",
+                    "It must not merge with the crossing paragraph."
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "truth": {
+    "band_ids": ["p1-header", "p1-body"],
+    "column_ids": ["p1-header-c1", "p1-c1", "p1-c2"],
+    "roles": {
+      "p1-title": "title",
+      "p1-c1-section": "section_heading",
+      "p1-c1-body-1": "body",
+      "p1-c1-body-2a": "body",
+      "p1-c2-body-2b": "body",
+      "p1-c2-section": "section_heading",
+      "p1-c2-body-3": "body"
+    },
+    "reading_order": [
+      "p1-title",
+      "p1-c1-section",
+      "p1-c1-body-1",
+      "p1-c1-body-2a",
+      "p1-c2-body-2b",
+      "p1-c2-section",
+      "p1-c2-body-3"
+    ],
+    "cross_boundary_units": [
+      {
+        "unit_id": "unit-cross-column",
+        "kind": "cross_column",
+        "fragments": ["p1-c1-body-2a", "p1-c2-body-2b"]
+      }
+    ],
+    "scenario_expectations": [
+      "merge_source_fragments",
+      "translation_need_not_split_at_source_break"
+    ]
+  }
+}

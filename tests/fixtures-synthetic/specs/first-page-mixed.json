@@ -1,0 +1,140 @@
+{
+  "schema_version": 1,
+  "fixture_id": "first-page-mixed",
+  "title": "Synthetic Mixed First Page",
+  "license": "CC0-1.0",
+  "creator": "academic-pdf-en-zh-reader contributors",
+  "source": "project-authored synthetic content",
+  "uses_system_fonts": false,
+  "uses_randomness": false,
+  "uses_current_time": false,
+  "pages": [
+    {
+      "page_number": 1,
+      "size": "A4",
+      "orientation": "portrait",
+      "bands": [
+        {
+          "id": "p1-full-width",
+          "bbox_mm": [18, 206, 192, 281],
+          "column_count": 1,
+          "columns": [
+            {
+              "id": "p1-full-c1",
+              "bbox_mm": [18, 206, 192, 281],
+              "blocks": [
+                {
+                  "id": "p1-title",
+                  "role": "title",
+                  "bbox_mm": [20, 260, 190, 280],
+                  "lines": ["A Synthetic First Page with Mixed Topology"]
+                },
+                {
+                  "id": "p1-abstract-heading",
+                  "role": "abstract_heading",
+                  "bbox_mm": [22, 244, 188, 255],
+                  "lines": ["Abstract"]
+                },
+                {
+                  "id": "p1-abstract",
+                  "role": "abstract",
+                  "bbox_mm": [22, 218, 188, 242],
+                  "lines": [
+                    "The upper band spans the page while the lower band uses two columns.",
+                    "This invented layout provides an explicit transition for topology tests."
+                  ]
+                },
+                {
+                  "id": "p1-keywords",
+                  "role": "keywords",
+                  "bbox_mm": [22, 207, 188, 216],
+                  "lines": ["Keywords: mixed topology; full width; two columns"]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "p1-two-column",
+          "bbox_mm": [18, 24, 192, 198],
+          "column_count": 2,
+          "columns": [
+            {
+              "id": "p1-c1",
+              "bbox_mm": [18, 24, 101, 198],
+              "blocks": [
+                {
+                  "id": "p1-c1-section",
+                  "role": "section_heading",
+                  "bbox_mm": [18, 184, 101, 197],
+                  "lines": ["1. Left-column method"]
+                },
+                {
+                  "id": "p1-c1-body",
+                  "role": "body",
+                  "bbox_mm": [18, 126, 101, 181],
+                  "lines": [
+                    "A fixed apparatus emits one synthetic value.",
+                    "The value is retained only for layout checks.",
+                    "The left column precedes the right column."
+                  ]
+                }
+              ]
+            },
+            {
+              "id": "p1-c2",
+              "bbox_mm": [109, 24, 192, 198],
+              "blocks": [
+                {
+                  "id": "p1-c2-section",
+                  "role": "section_heading",
+                  "bbox_mm": [109, 184, 192, 197],
+                  "lines": ["2. Right-column result"]
+                },
+                {
+                  "id": "p1-c2-body",
+                  "role": "body",
+                  "bbox_mm": [109, 126, 192, 181],
+                  "lines": [
+                    "A second fixed value confirms the reading order.",
+                    "No dashed leader belongs to this two-column band.",
+                    "The text is entirely synthetic."
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "truth": {
+    "band_ids": ["p1-full-width", "p1-two-column"],
+    "column_ids": ["p1-full-c1", "p1-c1", "p1-c2"],
+    "roles": {
+      "p1-title": "title",
+      "p1-abstract-heading": "abstract_heading",
+      "p1-abstract": "abstract",
+      "p1-keywords": "keywords",
+      "p1-c1-section": "section_heading",
+      "p1-c1-body": "body",
+      "p1-c2-section": "section_heading",
+      "p1-c2-body": "body"
+    },
+    "reading_order": [
+      "p1-title",
+      "p1-abstract-heading",
+      "p1-abstract",
+      "p1-keywords",
+      "p1-c1-section",
+      "p1-c1-body",
+      "p1-c2-section",
+      "p1-c2-body"
+    ],
+    "cross_boundary_units": [],
+    "scenario_expectations": [
+      "full_width_then_two_columns",
+      "leader_only_in_single_column_band"
+    ]
+  }
+}

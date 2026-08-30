@@ -1,0 +1,48 @@
+# SPDX-FileCopyrightText: 2026 academic-pdf-en-zh-reader contributors
+# SPDX-License-Identifier: Apache-2.0
+
+name: Dependency review
+
+"on":
+  pull_request:
+    paths:
+      - pyproject.toml
+      - uv.lock
+      - compliance/dependencies.json
+      - .github/workflows/dependency-review.yml
+
+permissions: {}
+
+jobs:
+  review:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+      - if: ${{ github.event.repository.private == false }}
+        uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294 # v5.0.0
+        with:
+          fail-on-severity: moderate
+          deny-licenses: >-
+            AGPL-1.0-only, AGPL-1.0-or-later,
+            AGPL-3.0-only, AGPL-3.0-or-later,
+            GPL-1.0-only, GPL-1.0-or-later,
+            GPL-2.0-only, GPL-2.0-or-later,
+            GPL-3.0-only, GPL-3.0-or-later,
+            LGPL-2.0-only, LGPL-2.0-or-later,
+            LGPL-2.1-only, LGPL-2.1-or-later,
+            LGPL-3.0-only, LGPL-3.0-or-later,
+            SSPL-1.0
+      - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        with:
+          version: "0.12.6"
+          python-version: "3.12.13"
+          enable-cache: false
+      - name: Export the frozen runtime closure
+        run: uv export --frozen --no-dev --no-emit-project --format requirements-txt --output-file .pip-audit-requirements.txt
+      - uses: pypa/gh-action-pip-audit@1220774d901786e6f652ae159f7b6bc8fea6d266 # v1.1.0
+        with:
+          inputs: .pip-audit-requirements.txt

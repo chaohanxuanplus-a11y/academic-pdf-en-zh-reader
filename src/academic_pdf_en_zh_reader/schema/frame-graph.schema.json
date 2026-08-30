@@ -1,0 +1,588 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:academic-pdf-en-zh-reader:schema:frame-graph:1.0.0",
+  "title": "Ordered right-panel frame graph",
+  "x-spdx-copyright": "2026 academic-pdf-en-zh-reader contributors",
+  "x-spdx-license-identifier": "Apache-2.0",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version", "artifact_kind", "frame_graph_input_hash",
+    "right_panel_bbox_mpt", "font_fingerprint", "flow_spacing",
+    "continuation_header", "pages", "edges", "unit_flows",
+    "unit_parts", "figure_note_flows"
+  ],
+  "properties": {
+    "schema_version": {"const": "1.0.0"},
+    "artifact_kind": {"const": "frame-graph"},
+    "line_mapping_version": {"const": 2},
+    "annotation_binding": {"$ref": "#/$defs/annotation_binding"},
+    "frame_graph_input_hash": {"$ref": "#/$defs/sha256"},
+    "right_panel_bbox_mpt": {"$ref": "#/$defs/box_mpt"},
+    "font_fingerprint": {
+      "type": "array",
+      "minItems": 3,
+      "maxItems": 3,
+      "items": {"$ref": "#/$defs/font_face"}
+    },
+    "flow_spacing": {"$ref": "#/$defs/flow_spacing"},
+    "continuation_header": {"$ref": "#/$defs/continuation_header"},
+    "pages": {
+      "type": "array",
+      "minItems": 1,
+      "items": {"$ref": "#/$defs/page"}
+    },
+    "edges": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/edge"}
+    },
+    "unit_flows": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/unit_flow"}
+    },
+    "unit_parts": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/unit_part"}
+    },
+    "figure_note_flows": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/figure_note_flow"}
+    },
+    "auxiliary_flows": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/auxiliary_flow"}
+    }
+  },
+  "$defs": {
+    "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "annotation_binding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "parent_hash", "selection_hash"],
+      "properties": {
+        "kind": {"enum": ["trial", "final"]},
+        "parent_hash": {"$ref": "#/$defs/sha256"},
+        "selection_hash": {"$ref": "#/$defs/sha256"}
+      }
+    },
+    "box_mpt": {
+      "type": "array",
+      "prefixItems": [
+        {"type": "integer"}, {"type": "integer"},
+        {"type": "integer"}, {"type": "integer"}
+      ],
+      "items": false,
+      "minItems": 4,
+      "maxItems": 4
+    },
+    "font_face": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["role", "reportlab_name", "sha256"],
+      "properties": {
+        "role": {"enum": ["body", "heading", "symbols"]},
+        "reportlab_name": {"type": "string", "minLength": 1},
+        "sha256": {"$ref": "#/$defs/sha256"}
+      }
+    },
+    "flow_spacing": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "config_version", "horizontal_padding_mpt", "vertical_padding_mpt",
+        "block_gap_mpt", "figure_note_gap_mpt"
+      ],
+      "properties": {
+        "config_version": {"type": "integer", "minimum": 1},
+        "horizontal_padding_mpt": {"type": "integer", "minimum": 0},
+        "vertical_padding_mpt": {"type": "integer", "minimum": 0},
+        "block_gap_mpt": {"type": "integer", "minimum": 0},
+        "figure_note_gap_mpt": {"type": "integer", "minimum": 0}
+      }
+    },
+    "style": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "style_id", "semantic_role", "font_role", "size_mpt", "line_height_mpt"
+      ],
+      "properties": {
+        "style_id": {"type": "string", "minLength": 1},
+        "semantic_role": {
+          "enum": [
+            "title", "abstract", "keywords", "heading", "body",
+            "figure-caption", "table-caption", "footnote", "auxiliary"
+          ]
+        },
+        "font_role": {"enum": ["body", "heading"]},
+        "size_mpt": {"type": "integer", "minimum": 1},
+        "line_height_mpt": {"type": "integer", "minimum": 1}
+      }
+    },
+    "font_run": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["font_role", "font_name", "text"],
+      "properties": {
+        "font_role": {"enum": ["body", "heading", "symbols"]},
+        "font_name": {"type": "string", "minLength": 1},
+        "text": {"type": "string", "minLength": 1}
+      }
+    },
+    "continuation_run": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "run_index", "text", "font_role", "font_name",
+        "x_offset_mpt", "width_mpt"
+      ],
+      "properties": {
+        "run_index": {"type": "integer", "minimum": 0},
+        "text": {"type": "string", "minLength": 1},
+        "font_role": {"enum": ["body", "heading", "symbols"]},
+        "font_name": {"type": "string", "minLength": 1},
+        "x_offset_mpt": {"type": "integer", "minimum": 0},
+        "width_mpt": {"type": "integer", "minimum": 1}
+      }
+    },
+    "continuation_header": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "contract_version", "text", "style", "runs", "width_mpt",
+        "line_height_mpt", "ascent_mpt", "descent_mpt", "top_inset_mpt",
+        "gap_after_mpt", "reserve_height_mpt", "color_token", "color_hex",
+        "horizontal_alignment", "header_hash"
+      ],
+      "properties": {
+        "contract_version": {"const": "1.0.0"},
+        "text": {"const": "译文续页"},
+        "style": {"$ref": "#/$defs/style"},
+        "runs": {
+          "type": "array", "minItems": 1,
+          "items": {"$ref": "#/$defs/continuation_run"}
+        },
+        "width_mpt": {"type": "integer", "minimum": 1},
+        "line_height_mpt": {"type": "integer", "minimum": 1},
+        "ascent_mpt": {"type": "integer", "minimum": 1},
+        "descent_mpt": {"type": "integer", "maximum": 0},
+        "top_inset_mpt": {"type": "integer", "minimum": 0},
+        "gap_after_mpt": {"const": 3000},
+        "reserve_height_mpt": {"type": "integer", "minimum": 1},
+        "color_token": {"const": "muted_gray"},
+        "color_hex": {"const": "#666666"},
+        "horizontal_alignment": {"const": "right"},
+        "header_hash": {"$ref": "#/$defs/sha256"}
+      }
+    },
+    "page": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["page_number", "page_height_mpt", "bands", "frames"],
+      "properties": {
+        "page_number": {"type": "integer", "minimum": 1},
+        "page_height_mpt": {"type": "integer", "minimum": 1},
+        "bands": {
+          "type": "array",
+          "minItems": 1,
+          "items": {"$ref": "#/$defs/band"}
+        },
+        "frames": {
+          "type": "array",
+          "minItems": 2,
+          "items": {"$ref": "#/$defs/frame"}
+        }
+      }
+    },
+    "band": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id", "source_band_id", "band_index", "preferred_top_offset_mpt",
+        "preferred_bottom_offset_mpt", "initial_unsplit_content_height_mpt",
+        "height_basis",
+        "native_frame_ids", "continuation_template_frame_ids",
+        "initial_unsplit_content_item_ids"
+      ],
+      "properties": {
+        "id": {"type": "string", "minLength": 1},
+        "source_band_id": {"type": "string", "minLength": 1},
+        "band_index": {"type": "integer", "minimum": 0},
+        "preferred_top_offset_mpt": {"type": "integer", "minimum": 0},
+        "preferred_bottom_offset_mpt": {"type": "integer", "minimum": 1},
+        "initial_unsplit_content_height_mpt": {"type": "integer", "minimum": 1},
+        "height_basis": {
+          "enum": [
+            "initial-unsplit-ordinary-flow",
+            "initial-unsplit-caption-plus-approved-figure-notes",
+            "initial-unsplit-caption-plus-frozen-annotation-auxiliary"
+          ]
+        },
+        "native_frame_ids": {
+          "type": "array",
+          "minItems": 1,
+          "items": {"type": "string", "minLength": 1}
+        },
+        "continuation_template_frame_ids": {
+          "type": "array",
+          "minItems": 1,
+          "items": {"type": "string", "minLength": 1}
+        },
+        "initial_unsplit_content_item_ids": {
+          "type": "array",
+          "items": {"type": "string", "minLength": 1}
+        }
+      }
+    },
+    "frame": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id", "kind", "activation", "bbox_mpt", "text_left_mpt",
+        "text_right_mpt", "source_page_number", "source_band_id",
+        "source_column_id", "band_index", "column_index", "column_count",
+        "width_ratio_ppm"
+      ],
+      "properties": {
+        "id": {"type": "string", "minLength": 1},
+        "kind": {"enum": ["native", "continuation-template"]},
+        "activation": {"enum": ["always", "candidate"]},
+        "bbox_mpt": {"$ref": "#/$defs/box_mpt"},
+        "text_left_mpt": {"type": "integer"},
+        "text_right_mpt": {"type": "integer"},
+        "source_page_number": {"type": "integer", "minimum": 1},
+        "source_band_id": {"type": "string", "minLength": 1},
+        "source_column_id": {"type": "string", "minLength": 1},
+        "band_index": {"type": "integer", "minimum": 0},
+        "column_index": {"type": "integer", "minimum": 0},
+        "column_count": {"type": "integer", "minimum": 1},
+        "width_ratio_ppm": {"type": "integer", "minimum": 1, "maximum": 1000000}
+      }
+    },
+    "edge": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id", "from_frame_id", "to_frame_id", "order", "transition",
+        "activation", "allowed_break_kinds"
+      ],
+      "properties": {
+        "id": {"type": "string", "minLength": 1},
+        "from_frame_id": {"type": "string", "minLength": 1},
+        "to_frame_id": {"type": "string", "minLength": 1},
+        "order": {"type": "integer", "minimum": 0},
+        "transition": {
+          "enum": [
+            "next-column", "next-band", "next-source-page",
+            "enter-continuation", "leave-continuation"
+          ]
+        },
+        "activation": {"enum": ["always", "candidate"]},
+        "allowed_break_kinds": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {"enum": ["between-unit", "sentence", "line"]}
+        }
+      }
+    },
+    "line": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "index", "target_start", "target_end", "text", "style_id", "width_mpt",
+        "line_height_mpt", "ascent_mpt", "descent_mpt", "runs", "line_box_hash"
+      ],
+      "properties": {
+        "index": {"type": "integer", "minimum": 0},
+        "target_start": {"type": "integer", "minimum": 0},
+        "target_end": {"type": "integer", "minimum": 0},
+        "composite_start": {"type": "integer", "minimum": 0},
+        "composite_end": {"type": "integer", "minimum": 1},
+        "synthetic_annotation_ids": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {"type": "string", "minLength": 1}
+        },
+        "text": {"type": "string", "minLength": 1},
+        "style_id": {"type": "string", "minLength": 1},
+        "width_mpt": {"type": "integer", "minimum": 1},
+        "line_height_mpt": {"type": "integer", "minimum": 1},
+        "ascent_mpt": {"type": "integer", "minimum": 1},
+        "descent_mpt": {"type": "integer", "maximum": 0},
+        "runs": {
+          "type": "array",
+          "minItems": 1,
+          "items": {"$ref": "#/$defs/font_run"}
+        },
+        "line_box_hash": {"$ref": "#/$defs/sha256"}
+      }
+    },
+    "break": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["after_line", "kind"],
+      "properties": {
+        "after_line": {"type": "integer", "minimum": 1},
+        "kind": {"enum": ["sentence", "line"]}
+      }
+    },
+    "anchor": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind", "source_block_id", "source_page_number",
+        "source_visual_center_offset_mpt", "initial_part_index"
+      ],
+      "properties": {
+        "kind": {"enum": ["leader", "soft-y"]},
+        "source_block_id": {"type": "string", "minLength": 1},
+        "source_page_number": {"type": "integer", "minimum": 1},
+        "source_visual_center_offset_mpt": {"type": "integer", "minimum": 0},
+        "initial_part_index": {"const": 0},
+        "source_band_id": {"type": "string", "minLength": 1},
+        "source_first_line_bbox_mpt": {"$ref": "#/$defs/box_mpt"},
+        "source_endpoint_mpt": {"$ref": "#/$defs/point_mpt"}
+      }
+    },
+    "point_mpt": {
+      "type": "array",
+      "prefixItems": [{"type": "integer"}, {"type": "integer"}],
+      "items": false,
+      "minItems": 2,
+      "maxItems": 2
+    },
+    "source_anchor_candidate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind", "source_block_id", "source_page_number", "source_band_id",
+        "source_visual_center_offset_mpt", "source_first_line_bbox_mpt",
+        "source_endpoint_mpt"
+      ],
+      "properties": {
+        "kind": {"enum": ["leader", "soft-y"]},
+        "source_block_id": {"type": "string", "minLength": 1},
+        "source_page_number": {"type": "integer", "minimum": 1},
+        "source_band_id": {"type": "string", "minLength": 1},
+        "source_visual_center_offset_mpt": {"type": "integer", "minimum": 0},
+        "source_first_line_bbox_mpt": {"$ref": "#/$defs/box_mpt"},
+        "source_endpoint_mpt": {"$ref": "#/$defs/point_mpt"}
+      }
+    },
+    "styled_span": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "annotation_id", "kind", "target_start", "target_end",
+        "color_token", "underline"
+      ],
+      "properties": {
+        "annotation_id": {"type": "string", "minLength": 1},
+        "kind": {"enum": ["dark-red-highlight", "bright-red-ambiguity"]},
+        "target_start": {"type": "integer", "minimum": 0},
+        "target_end": {"type": "integer", "minimum": 1},
+        "color_token": {"enum": ["dark_red", "bright_red"]},
+        "underline": {"type": "boolean"}
+      }
+    },
+    "composite_segment": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "index", "kind", "composite_start", "composite_end",
+            "target_start", "target_end", "text"
+          ],
+          "properties": {
+            "index": {"type": "integer", "minimum": 0},
+            "kind": {"const": "target"},
+            "composite_start": {"type": "integer", "minimum": 0},
+            "composite_end": {"type": "integer", "minimum": 1},
+            "target_start": {"type": "integer", "minimum": 0},
+            "target_end": {"type": "integer", "minimum": 1},
+            "text": {"type": "string", "minLength": 1}
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "index", "kind", "composite_start", "composite_end",
+            "target_offset", "annotation_id", "text"
+          ],
+          "properties": {
+            "index": {"type": "integer", "minimum": 0},
+            "kind": {"const": "ambiguity-label"},
+            "composite_start": {"type": "integer", "minimum": 0},
+            "composite_end": {"type": "integer", "minimum": 1},
+            "target_offset": {"type": "integer", "minimum": 0},
+            "annotation_id": {"type": "string", "minLength": 1},
+            "text": {"type": "string", "minLength": 1}
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "index", "kind", "composite_start", "composite_end",
+            "target_offset", "annotation_id", "text"
+          ],
+          "properties": {
+            "index": {"const": 0},
+            "kind": {"const": "auxiliary-content"},
+            "composite_start": {"const": 0},
+            "composite_end": {"type": "integer", "minimum": 1},
+            "target_offset": {"type": "integer", "minimum": 1},
+            "annotation_id": {"type": "string", "minLength": 1},
+            "text": {"type": "string", "minLength": 1}
+          }
+        }
+      ]
+    },
+    "unit_flow": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "unit_id", "role", "home_frame_id", "allowed_native_frame_ids",
+        "continuation_owner_page_number", "source_fragment_start",
+        "source_fragment_end", "line_count", "style", "line_sequence_hash",
+        "lines", "legal_breaks", "anchor"
+      ],
+      "properties": {
+        "unit_id": {"type": "string", "minLength": 1},
+        "role": {
+          "enum": [
+            "title", "abstract", "keywords", "heading", "body",
+            "figure-caption", "table-caption", "footnote"
+          ]
+        },
+        "home_frame_id": {"type": "string", "minLength": 1},
+        "allowed_native_frame_ids": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {"type": "string", "minLength": 1}
+        },
+        "continuation_owner_page_number": {"type": "integer", "minimum": 1},
+        "source_fragment_start": {"const": 0},
+        "source_fragment_end": {"type": "integer", "minimum": 1},
+        "line_count": {"type": "integer", "minimum": 1},
+        "style": {"$ref": "#/$defs/style"},
+        "line_sequence_hash": {"$ref": "#/$defs/sha256"},
+        "lines": {
+          "type": "array",
+          "minItems": 1,
+          "items": {"$ref": "#/$defs/line"}
+        },
+        "legal_breaks": {
+          "type": "array",
+          "items": {"$ref": "#/$defs/break"}
+        },
+        "anchor": {"$ref": "#/$defs/anchor"}
+        ,
+        "base_target_length": {"type": "integer", "minimum": 1},
+        "composite_length": {"type": "integer", "minimum": 1},
+        "composite_segments": {
+          "type": "array", "minItems": 1,
+          "items": {"$ref": "#/$defs/composite_segment"}
+        },
+        "styled_spans": {
+          "type": "array",
+          "items": {"$ref": "#/$defs/styled_span"}
+        },
+        "source_anchor_candidates": {
+          "type": "array", "minItems": 1,
+          "items": {"$ref": "#/$defs/source_anchor_candidate"}
+        }
+      }
+    },
+    "unit_part": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id", "unit_id", "part_index", "frame_id", "line_start", "line_end",
+        "source_fragment_start", "source_fragment_end", "is_first_part",
+        "creates_anchor"
+      ],
+      "properties": {
+        "id": {"type": "string", "minLength": 1},
+        "unit_id": {"type": "string", "minLength": 1},
+        "part_index": {"const": 0},
+        "frame_id": {"type": "string", "minLength": 1},
+        "line_start": {"const": 0},
+        "line_end": {"type": "integer", "minimum": 1},
+        "source_fragment_start": {"const": 0},
+        "source_fragment_end": {"type": "integer", "minimum": 1},
+        "is_first_part": {"const": true},
+        "creates_anchor": {"const": true}
+      }
+    },
+    "figure_note_flow": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id", "unit_id", "frame_id", "note_index", "line_count", "style",
+        "line_sequence_hash", "lines"
+      ],
+      "properties": {
+        "id": {"type": "string", "minLength": 1},
+        "unit_id": {"type": "string", "minLength": 1},
+        "frame_id": {"type": "string", "minLength": 1},
+        "note_index": {"type": "integer", "minimum": 0},
+        "line_count": {"type": "integer", "minimum": 1},
+        "style": {"$ref": "#/$defs/style"},
+        "line_sequence_hash": {"$ref": "#/$defs/sha256"},
+        "lines": {
+          "type": "array",
+          "minItems": 1,
+          "items": {"$ref": "#/$defs/line"}
+        }
+      }
+    },
+    "auxiliary_flow": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id", "annotation_id", "annotation_kind", "unit_id",
+        "order_after_unit", "attachment", "home_frame_id",
+        "allowed_native_frame_ids", "continuation_owner_page_number",
+        "parent_target_length", "attachment_target_start",
+        "attachment_target_end", "composite_length", "composite_segments",
+        "line_count", "style", "line_sequence_hash", "lines"
+      ],
+      "properties": {
+        "id": {"type": "string", "minLength": 1},
+        "annotation_id": {"type": "string", "minLength": 1},
+        "annotation_kind": {
+          "enum": ["dark-orange-teaching", "figure-table-reading"]
+        },
+        "unit_id": {"type": "string", "minLength": 1},
+        "order_after_unit": {"type": "integer", "minimum": 0},
+        "attachment": {"const": "below-translation"},
+        "home_frame_id": {"type": "string", "minLength": 1},
+        "allowed_native_frame_ids": {
+          "type": "array", "minItems": 1, "uniqueItems": true,
+          "items": {"type": "string", "minLength": 1}
+        },
+        "continuation_owner_page_number": {"type": "integer", "minimum": 1},
+        "parent_target_length": {"type": "integer", "minimum": 1},
+        "attachment_target_start": {"type": "integer", "minimum": 0},
+        "attachment_target_end": {"type": "integer", "minimum": 1},
+        "composite_length": {"type": "integer", "minimum": 1},
+        "composite_segments": {
+          "type": "array", "minItems": 1,
+          "items": {"$ref": "#/$defs/composite_segment"}
+        },
+        "line_count": {"type": "integer", "minimum": 1},
+        "style": {"$ref": "#/$defs/style"},
+        "line_sequence_hash": {"$ref": "#/$defs/sha256"},
+        "lines": {
+          "type": "array", "minItems": 1,
+          "items": {"$ref": "#/$defs/line"}
+        }
+      }
+    }
+  }
+}

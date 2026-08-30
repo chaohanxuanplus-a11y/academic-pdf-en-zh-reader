@@ -1,0 +1,124 @@
+{
+  "schema_version": 1,
+  "fixture_id": "long-translation",
+  "title": "Synthetic Source for Long Translation Reflow",
+  "license": "CC0-1.0",
+  "creator": "academic-pdf-en-zh-reader contributors",
+  "source": "project-authored synthetic content",
+  "uses_system_fonts": false,
+  "uses_randomness": false,
+  "uses_current_time": false,
+  "pages": [
+    {
+      "page_number": 1,
+      "size": "A4",
+      "orientation": "portrait",
+      "bands": [
+        {
+          "id": "p1-header",
+          "bbox_mm": [18, 250, 192, 281],
+          "column_count": 1,
+          "columns": [
+            {
+              "id": "p1-header-c1",
+              "bbox_mm": [18, 250, 192, 281],
+              "blocks": [
+                {
+                  "id": "p1-title",
+                  "role": "title",
+                  "bbox_mm": [20, 260, 190, 280],
+                  "lines": ["Synthetic Source for Fixed-Size Overflow Testing"]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "p1-body",
+          "bbox_mm": [22, 24, 188, 242],
+          "column_count": 1,
+          "columns": [
+            {
+              "id": "p1-c1",
+              "bbox_mm": [22, 24, 188, 242],
+              "blocks": [
+                {
+                  "id": "p1-section-1",
+                  "role": "section_heading",
+                  "bbox_mm": [22, 226, 188, 241],
+                  "lines": ["1. Dense source"]
+                },
+                {
+                  "id": "p1-body-1",
+                  "role": "body",
+                  "bbox_mm": [22, 180, 188, 223],
+                  "lines": [
+                    "A compact English statement may require a substantially longer explanation",
+                    "when every relation, degree, condition, and technical distinction is retained."
+                  ]
+                },
+                {
+                  "id": "p1-body-2",
+                  "role": "body",
+                  "bbox_mm": [22, 132, 188, 177],
+                  "lines": [
+                    "The synthetic translation contract below deliberately exceeds the local frame.",
+                    "It exists to force ordered reflow without shrinking or deleting main text."
+                  ]
+                },
+                {
+                  "id": "p1-section-2",
+                  "role": "section_heading",
+                  "bbox_mm": [22, 114, 188, 129],
+                  "lines": ["2. Fixed conclusion"]
+                },
+                {
+                  "id": "p1-body-3",
+                  "role": "body",
+                  "bbox_mm": [22, 70, 188, 111],
+                  "lines": [
+                    "A continuation page is acceptable only after local and column reflow fail.",
+                    "The body font size and complete reading order remain invariant."
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "translation_pressure": {
+    "target_character_count": 1800,
+    "main_text_complete": true,
+    "font_size_must_not_shrink": true,
+    "expected_final_scope": "continuation_page"
+  },
+  "truth": {
+    "band_ids": ["p1-header", "p1-body"],
+    "column_ids": ["p1-header-c1", "p1-c1"],
+    "roles": {
+      "p1-title": "title",
+      "p1-section-1": "section_heading",
+      "p1-body-1": "body",
+      "p1-body-2": "body",
+      "p1-section-2": "section_heading",
+      "p1-body-3": "body"
+    },
+    "reading_order": [
+      "p1-title",
+      "p1-section-1",
+      "p1-body-1",
+      "p1-body-2",
+      "p1-section-2",
+      "p1-body-3"
+    ],
+    "cross_boundary_units": [],
+    "scenario_expectations": [
+      "minimal_reflow_scope_order",
+      "fixed_font_size",
+      "complete_translation",
+      "continuation_page_last"
+    ]
+  }
+}

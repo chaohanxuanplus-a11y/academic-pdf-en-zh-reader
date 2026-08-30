@@ -1,0 +1,36 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:academic-pdf-en-zh-reader:schema:correction-suggestions:1.0.0",
+  "title": "Read-only personal correction suggestions",
+  "x-spdx-copyright": "2026 academic-pdf-en-zh-reader contributors",
+  "x-spdx-license-identifier": "Apache-2.0",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "artifact_kind", "read_only", "suggestions"],
+  "properties": {
+    "schema_version": {"const": "1.0.0"},
+    "artifact_kind": {"const": "correction-suggestions"},
+    "read_only": {"const": true},
+    "suggestions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "english", "normalized_english", "preferred_chinese", "context_hash", "domain", "source_part_of_speech", "target_grammar_function", "semantic_tags"],
+        "properties": {
+          "id": {"type": "string", "minLength": 1},
+          "english": {"type": "string", "minLength": 1},
+          "normalized_english": {"type": "string", "minLength": 1},
+          "preferred_chinese": {"type": "string", "minLength": 1},
+          "context_hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+          "domain": {"type": "string", "minLength": 1},
+          "source_part_of_speech": {"type": "string", "minLength": 1},
+          "target_grammar_function": {"type": "string", "minLength": 1},
+          "semantic_tags": {"type": "array", "items": {"type": "string", "minLength": 1}},
+          "minimal_context": {"type": ["string", "null"], "maxLength": 280},
+          "conflict": {"type": "boolean"}
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,74 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:academic-pdf-en-zh-reader:schema:finalization-receipt:1.0.0",
+  "title": "Canonical annotation and layout finalization receipt",
+  "x-spdx-copyright": "2026 academic-pdf-en-zh-reader contributors",
+  "x-spdx-license-identifier": "Apache-2.0",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "artifact_kind",
+    "artifact_hashes",
+    "policy_hashes",
+    "candidate_set_hash",
+    "selection_hash",
+    "solver_input_hash",
+    "continuation_page_count",
+    "receipt_hash"
+  ],
+  "properties": {
+    "schema_version": {"const": "1.0.0"},
+    "artifact_kind": {"const": "finalization-receipt"},
+    "artifact_hashes": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "source",
+        "units",
+        "translation",
+        "review",
+        "annotations",
+        "frame-graph",
+        "layout"
+      ],
+      "properties": {
+        "source": {"$ref": "#/$defs/sha256"},
+        "units": {"$ref": "#/$defs/sha256"},
+        "translation": {"$ref": "#/$defs/sha256"},
+        "review": {"$ref": "#/$defs/sha256"},
+        "annotations": {"$ref": "#/$defs/sha256"},
+        "frame-graph": {"$ref": "#/$defs/sha256"},
+        "layout": {"$ref": "#/$defs/sha256"}
+      }
+    },
+    "policy_hashes": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "style-contract",
+        "font-fingerprint",
+        "frame-graph-config",
+        "layout-limits",
+        "annotation-adapter-limits",
+        "orange-selection-policy"
+      ],
+      "properties": {
+        "style-contract": {"$ref": "#/$defs/sha256"},
+        "font-fingerprint": {"$ref": "#/$defs/sha256"},
+        "frame-graph-config": {"$ref": "#/$defs/sha256"},
+        "layout-limits": {"$ref": "#/$defs/sha256"},
+        "annotation-adapter-limits": {"$ref": "#/$defs/sha256"},
+        "orange-selection-policy": {"$ref": "#/$defs/sha256"}
+      }
+    },
+    "candidate_set_hash": {"$ref": "#/$defs/sha256"},
+    "selection_hash": {"$ref": "#/$defs/sha256"},
+    "solver_input_hash": {"$ref": "#/$defs/sha256"},
+    "continuation_page_count": {"type": "integer", "minimum": 0},
+    "receipt_hash": {"$ref": "#/$defs/sha256"}
+  },
+  "$defs": {
+    "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+  }
+}

@@ -1,0 +1,59 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:academic-pdf-en-zh-reader:schema:translation:1.0.0",
+  "title": "Complete Chinese translation",
+  "x-spdx-copyright": "2026 academic-pdf-en-zh-reader contributors",
+  "x-spdx-license-identifier": "Apache-2.0",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "artifact_kind", "units_hash", "translator_id", "translation_revision", "units"],
+  "properties": {
+    "schema_version": {"const": "1.0.0"},
+    "artifact_kind": {"const": "translation"},
+    "units_hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "translator_id": {"type": "string", "minLength": 1},
+    "translation_revision": {"type": "integer", "minimum": 1},
+    "units": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["unit_id", "chinese_text", "spans", "terminology"],
+        "properties": {
+          "unit_id": {"type": "string", "minLength": 1},
+          "chinese_text": {"type": "string"},
+          "spans": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["source_start", "source_end", "target_start", "target_end"],
+              "properties": {
+                "source_start": {"type": "integer", "minimum": 0},
+                "source_end": {"type": "integer", "minimum": 0},
+                "target_start": {"type": "integer", "minimum": 0},
+                "target_end": {"type": "integer", "minimum": 0}
+              }
+            }
+          },
+          "terminology": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["source", "target", "source_start", "source_end", "target_start", "target_end"],
+              "properties": {
+                "source": {"type": "string"},
+                "target": {"type": "string"},
+                "source_start": {"type": "integer", "minimum": 0},
+                "source_end": {"type": "integer", "minimum": 0},
+                "target_start": {"type": "integer", "minimum": 0},
+                "target_end": {"type": "integer", "minimum": 0}
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,11 @@
+# SPDX-FileCopyrightText: 2026 academic-pdf-en-zh-reader contributors
+# SPDX-License-Identifier: Apache-2.0
+
+cff-version: 1.2.0
+message: "If you use this software in research, cite the exact version you used."
+title: "academic-pdf-en-zh-reader"
+type: software
+authors:
+  - name: "academic-pdf-en-zh-reader contributors"
+version: "0.1.0.dev0"
+license: "Apache-2.0"

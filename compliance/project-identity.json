@@ -1,0 +1,35 @@
+{
+  "schema_version": 1,
+  "brand": {
+    "display_name_zh": "瀚海问材",
+    "display_name_en": "Hanhai Materials",
+    "skill_name": "academic-pdf-en-zh-reader"
+  },
+  "repository": {
+    "canonical_url": null,
+    "development_display": "GitHub：公开发布后提供"
+  },
+  "asset": {
+    "path": "assets/branding/hanhai-wencai.png",
+    "sha256": "1bb1dad5b83bd3b98060e513f3298bb0ace2bf4669590f60c6a3fbbdfb4ba0ab",
+    "size": 1471096,
+    "spdx_license": "LicenseRef-HanhaiWencai-Unreleased",
+    "rights_status": "unverified",
+    "evidence": null,
+    "copyright": {
+      "ownership_status": "unverified",
+      "public_redistribution_authorized": false,
+      "spdx_copyright_text": "NOASSERTION",
+      "spdx_license": "LicenseRef-HanhaiWencai-Unreleased",
+      "evidence": null
+    },
+    "trademark": {
+      "status": "unverified",
+      "public_use_authorized": false,
+      "evidence": null
+    }
+  },
+  "output_disclaimer": {
+    "zh_short": "本文件由用户主动调用本地工作区内的 Skill 和当前 Agent 生成。输入论文由用户自行合法取得并提供；本项目不提供、下载、托管或自动发布论文。用户须自行确认复制、翻译、标注、保存、分享或公开发布所需的授权或法律依据，并在重要使用或发布前核验 Agent 生成的译文与注释。项目许可证仅覆盖项目代码与文档，不授予对原论文、图表、其他第三方内容或生成译文的权利。完整声明见项目仓库中的 DISCLAIMER.md。"
+  }
+}

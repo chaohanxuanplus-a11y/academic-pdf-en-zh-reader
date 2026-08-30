@@ -1,0 +1,36 @@
+{
+  "schema_version": 1,
+  "state": "PUBLIC_RELEASE_BLOCKED",
+  "blockers": [
+    {
+      "id": "maintainer_identity_unverified",
+      "resolved": false,
+      "evidence": null
+    },
+    {
+      "id": "coc_primary_channel_unconfigured",
+      "resolved": false,
+      "evidence": null
+    },
+    {
+      "id": "coc_alternate_channel_unconfigured",
+      "resolved": false,
+      "evidence": null
+    },
+    {
+      "id": "security_private_channel_unconfigured",
+      "resolved": false,
+      "evidence": null
+    },
+    {
+      "id": "canonical_repository_url_unconfigured",
+      "resolved": false,
+      "evidence": null
+    },
+    {
+      "id": "brand_asset_rights_unverified",
+      "resolved": false,
+      "evidence": null
+    }
+  ]
+}

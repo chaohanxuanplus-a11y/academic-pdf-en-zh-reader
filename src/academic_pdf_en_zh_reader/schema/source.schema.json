@@ -1,0 +1,127 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:academic-pdf-en-zh-reader:schema:source:1.0.0",
+  "title": "Extracted source structure",
+  "x-spdx-copyright": "2026 academic-pdf-en-zh-reader contributors",
+  "x-spdx-license-identifier": "Apache-2.0",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version", "artifact_kind", "source_sha256",
+    "normalized_pdf_sha256", "pages"
+  ],
+  "properties": {
+    "schema_version": {"const": "1.0.0"},
+    "artifact_kind": {"const": "source"},
+    "source_sha256": {"$ref": "#/$defs/sha256"},
+    "normalized_pdf_sha256": {"$ref": "#/$defs/sha256"},
+    "pages": {
+      "type": "array",
+      "minItems": 1,
+      "items": {"$ref": "#/$defs/page"}
+    }
+  },
+  "$defs": {
+    "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "box_mpt": {
+      "type": "array",
+      "prefixItems": [
+        {"type": "integer"}, {"type": "integer"},
+        {"type": "integer"}, {"type": "integer"}
+      ],
+      "items": false,
+      "minItems": 4,
+      "maxItems": 4
+    },
+    "column": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "x_left_mpt", "x_right_mpt"],
+      "properties": {
+        "id": {"type": "string", "minLength": 1},
+        "x_left_mpt": {"type": "integer"},
+        "x_right_mpt": {"type": "integer"}
+      }
+    },
+    "band": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "y_top_mpt", "y_bottom_mpt", "columns"],
+      "properties": {
+        "id": {"type": "string", "minLength": 1},
+        "y_top_mpt": {"type": "integer"},
+        "y_bottom_mpt": {"type": "integer"},
+        "columns": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/column"}}
+      }
+    },
+    "block": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id", "role", "translation_policy", "band_id", "column_id",
+        "reading_order", "source_char_start", "source_char_end", "text",
+        "bbox_mpt", "first_line_bbox_mpt", "confidence_ppm"
+      ],
+      "properties": {
+        "id": {"type": "string", "minLength": 1},
+        "role": {
+          "enum": [
+            "title", "abstract", "keywords", "heading", "body",
+            "figure-caption", "table-caption", "author", "affiliation",
+            "bibliographic-metadata", "header", "footer", "page-number",
+            "watermark", "footnote", "endnote", "acknowledgements",
+            "equation", "variable", "code", "chemical-formula", "pure-data",
+            "reference-entry", "table-cell", "figure-text"
+          ]
+        },
+        "translation_policy": {"enum": ["required", "excluded"]},
+        "band_id": {"type": "string", "minLength": 1},
+        "column_id": {"type": "string", "minLength": 1},
+        "reading_order": {"type": "integer", "minimum": 0},
+        "source_char_start": {"type": "integer", "minimum": 0},
+        "source_char_end": {"type": "integer", "minimum": 1},
+        "text": {"type": "string"},
+        "bbox_mpt": {"$ref": "#/$defs/box_mpt"},
+        "first_line_bbox_mpt": {"$ref": "#/$defs/box_mpt"},
+        "confidence_ppm": {"type": "integer", "minimum": 0, "maximum": 1000000},
+        "source_font_size_mpt": {"type": "integer", "minimum": 1},
+        "target_graphic_id": {"type": "string", "minLength": 1}
+      }
+    },
+    "graphic_node": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "kind", "bbox_mpt", "confidence_ppm"],
+      "properties": {
+        "id": {"type": "string", "minLength": 1},
+        "kind": {"enum": ["figure", "table"]},
+        "bbox_mpt": {"$ref": "#/$defs/box_mpt"},
+        "confidence_ppm": {"type": "integer", "minimum": 0, "maximum": 1000000}
+      }
+    },
+    "page": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "page_number", "media_box_mpt", "crop_box_mpt", "rotation_degrees",
+        "bands", "graphic_nodes", "blocks"
+      ],
+      "properties": {
+        "page_number": {"type": "integer", "minimum": 1},
+        "media_box_mpt": {"$ref": "#/$defs/box_mpt"},
+        "crop_box_mpt": {"$ref": "#/$defs/box_mpt"},
+        "rotation_degrees": {"enum": [0, 90, 180, 270]},
+        "bands": {
+          "type": "array",
+          "minItems": 1,
+          "items": {"$ref": "#/$defs/band"}
+        },
+        "graphic_nodes": {
+          "type": "array",
+          "items": {"$ref": "#/$defs/graphic_node"}
+        },
+        "blocks": {"type": "array", "items": {"$ref": "#/$defs/block"}}
+      }
+    }
+  }
+}

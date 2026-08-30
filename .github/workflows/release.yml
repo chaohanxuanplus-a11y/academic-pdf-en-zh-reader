@@ -1,0 +1,66 @@
+# SPDX-FileCopyrightText: 2026 academic-pdf-en-zh-reader contributors
+# SPDX-License-Identifier: Apache-2.0
+
+name: Build release candidates
+
+"on":
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  build-candidates:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        with:
+          version: "0.12.6"
+          python-version: "3.12.13"
+          enable-cache: false
+      - name: Release readiness gate
+        run: uv run --no-project --python 3.12.13 python scripts/check_release_readiness.py --mode release
+      - name: Synchronize only after readiness succeeds
+        run: uv sync --frozen --all-groups
+      - name: Re-run release compliance gates
+        run: |
+          uv run --frozen pytest -q
+          uv run --frozen ruff check .
+          uv run --frozen ruff format --check .
+          uv run --frozen python scripts/check_dependency_policy.py
+          uv run --frozen python scripts/check_github_actions_policy.py
+      - uses: fsfe/reuse-action@676e2d560c9a403aa252096d99fcab3e1132b0f5 # v6.0.0
+      - name: Export the frozen runtime closure
+        run: uv export --frozen --no-dev --no-emit-project --format requirements-txt --output-file .pip-audit-requirements.txt
+      - uses: pypa/gh-action-pip-audit@1220774d901786e6f652ae159f7b6bc8fea6d266 # v1.1.0
+        with:
+          inputs: .pip-audit-requirements.txt
+      - name: Build deterministic source and Skill candidates
+        run: uv run --frozen python scripts/build_release_artifacts.py --output-dir dist/release
+      - uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610 # v0.24.0
+        with:
+          file: dist/release/academic-pdf-en-zh-reader-source.zip
+          format: spdx-json
+          output-file: dist/release/source.spdx.json
+      - uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610 # v0.24.0
+        with:
+          file: dist/release/academic-pdf-en-zh-reader-skill.zip
+          format: spdx-json
+          output-file: dist/release/skill.spdx.json
+      - name: Reject a development-state marker and hash every candidate
+        run: |
+          if grep -a -R -F "PUBLIC_RELEASE_BLOCKED" dist/release; then
+            exit 1
+          fi
+          cd dist/release
+          sha256sum academic-pdf-en-zh-reader-source.zip academic-pdf-en-zh-reader-skill.zip asset-manifest.json source.spdx.json skill.spdx.json > SHA256SUMS
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: release-candidates
+          path: dist/release/
+          if-no-files-found: error
+          retention-days: 14

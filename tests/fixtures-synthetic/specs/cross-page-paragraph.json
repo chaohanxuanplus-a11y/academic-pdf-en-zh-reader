@@ -1,0 +1,173 @@
+{
+  "schema_version": 1,
+  "fixture_id": "cross-page-paragraph",
+  "title": "Synthetic Paragraph Crossing a Page Boundary",
+  "license": "CC0-1.0",
+  "creator": "academic-pdf-en-zh-reader contributors",
+  "source": "project-authored synthetic content",
+  "uses_system_fonts": false,
+  "uses_randomness": false,
+  "uses_current_time": false,
+  "pages": [
+    {
+      "page_number": 1,
+      "size": "A4",
+      "orientation": "portrait",
+      "bands": [
+        {
+          "id": "p1-header",
+          "bbox_mm": [18, 250, 192, 281],
+          "column_count": 1,
+          "columns": [
+            {
+              "id": "p1-header-c1",
+              "bbox_mm": [18, 250, 192, 281],
+              "blocks": [
+                {
+                  "id": "p1-title",
+                  "role": "title",
+                  "bbox_mm": [20, 260, 190, 280],
+                  "lines": ["A Synthetic Paragraph Crossing Two Pages"]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "p1-body",
+          "bbox_mm": [22, 24, 188, 242],
+          "column_count": 1,
+          "columns": [
+            {
+              "id": "p1-c1",
+              "bbox_mm": [22, 24, 188, 242],
+              "blocks": [
+                {
+                  "id": "p1-c1-section",
+                  "role": "section_heading",
+                  "bbox_mm": [22, 226, 188, 241],
+                  "lines": ["1. Fixed sequence"]
+                },
+                {
+                  "id": "p1-c1-body-1",
+                  "role": "body",
+                  "bbox_mm": [22, 166, 188, 223],
+                  "lines": [
+                    "The synthetic sequence begins with two complete statements.",
+                    "Both statements remain on the first page."
+                  ]
+                },
+                {
+                  "id": "p1-c1-body-2a",
+                  "role": "body",
+                  "bbox_mm": [22, 27, 188, 69],
+                  "lines": [
+                    "A final paragraph begins near the first page foot and carries",
+                    "one continuous proposition beyond the physical page break"
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "page_number": 2,
+      "size": "A4",
+      "orientation": "portrait",
+      "bands": [
+        {
+          "id": "p2-header",
+          "bbox_mm": [22, 265, 188, 281],
+          "column_count": 1,
+          "columns": [
+            {
+              "id": "p2-header-c1",
+              "bbox_mm": [22, 265, 188, 281],
+              "blocks": [
+                {
+                  "id": "p2-page-header",
+                  "role": "page_header",
+                  "bbox_mm": [22, 269, 188, 280],
+                  "lines": ["Synthetic continuation - page 2"]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "p2-body",
+          "bbox_mm": [22, 24, 188, 260],
+          "column_count": 1,
+          "columns": [
+            {
+              "id": "p2-c1",
+              "bbox_mm": [22, 24, 188, 260],
+              "blocks": [
+                {
+                  "id": "p2-c1-body-2b",
+                  "role": "body",
+                  "bbox_mm": [22, 226, 188, 258],
+                  "lines": [
+                    "and completes at the top of page two without starting a new unit."
+                  ]
+                },
+                {
+                  "id": "p2-c1-section",
+                  "role": "section_heading",
+                  "bbox_mm": [22, 207, 188, 222],
+                  "lines": ["2. Independent note"]
+                },
+                {
+                  "id": "p2-c1-body-3",
+                  "role": "body",
+                  "bbox_mm": [22, 168, 188, 204],
+                  "lines": [
+                    "This new paragraph follows the completed cross-page unit.",
+                    "Its separation is part of the explicit truth inventory."
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "truth": {
+    "band_ids": ["p1-header", "p1-body", "p2-header", "p2-body"],
+    "column_ids": ["p1-header-c1", "p1-c1", "p2-header-c1", "p2-c1"],
+    "roles": {
+      "p1-title": "title",
+      "p1-c1-section": "section_heading",
+      "p1-c1-body-1": "body",
+      "p1-c1-body-2a": "body",
+      "p2-page-header": "page_header",
+      "p2-c1-body-2b": "body",
+      "p2-c1-section": "section_heading",
+      "p2-c1-body-3": "body"
+    },
+    "reading_order": [
+      "p1-title",
+      "p1-c1-section",
+      "p1-c1-body-1",
+      "p1-c1-body-2a",
+      "p2-page-header",
+      "p2-c1-body-2b",
+      "p2-c1-section",
+      "p2-c1-body-3"
+    ],
+    "cross_boundary_units": [
+      {
+        "unit_id": "unit-cross-page",
+        "kind": "cross_page",
+        "fragments": ["p1-c1-body-2a", "p2-c1-body-2b"]
+      }
+    ],
+    "scenario_expectations": [
+      "merge_source_fragments",
+      "translation_need_not_split_at_source_break"
+    ]
+  }
+}

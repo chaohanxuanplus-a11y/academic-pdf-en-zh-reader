@@ -1,0 +1,30 @@
+# SPDX-FileCopyrightText: 2026 academic-pdf-en-zh-reader contributors
+# SPDX-License-Identifier: Apache-2.0
+
+.venv/
+.tools/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.pytest-tmp-*/
+.audit-tmp-*/
+.test-tmp/
+.tmp-*/
+.task*-*/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+build/
+dist/
+*.egg-info/
+
+# Generated paper jobs and ordinary user deliverables
+tmp/
+output/
+.jobs/
+*.bilingual-a3.zh-CN.pdf
+
+# Personal correction stores must remain outside the repository.
+*.corrections.sqlite3
+*.corrections.sqlite3-*

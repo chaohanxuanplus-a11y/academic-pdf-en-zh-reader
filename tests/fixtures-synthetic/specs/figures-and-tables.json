@@ -1,0 +1,150 @@
+{
+  "schema_version": 1,
+  "fixture_id": "figures-and-tables",
+  "title": "Synthetic Figure and Table Fixture",
+  "license": "CC0-1.0",
+  "creator": "academic-pdf-en-zh-reader contributors",
+  "source": "project-authored synthetic content",
+  "uses_system_fonts": false,
+  "uses_randomness": false,
+  "uses_current_time": false,
+  "pages": [
+    {
+      "page_number": 1,
+      "size": "A4",
+      "orientation": "portrait",
+      "bands": [
+        {
+          "id": "p1-header",
+          "bbox_mm": [18, 250, 192, 281],
+          "column_count": 1,
+          "columns": [
+            {
+              "id": "p1-header-c1",
+              "bbox_mm": [18, 250, 192, 281],
+              "blocks": [
+                {
+                  "id": "p1-title",
+                  "role": "title",
+                  "bbox_mm": [20, 260, 190, 280],
+                  "lines": ["Synthetic Visual Elements with Explicit Captions"]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "p1-body",
+          "bbox_mm": [18, 24, 192, 242],
+          "column_count": 2,
+          "columns": [
+            {
+              "id": "p1-c1",
+              "bbox_mm": [18, 24, 101, 242],
+              "blocks": [
+                {
+                  "id": "p1-c1-section",
+                  "role": "section_heading",
+                  "bbox_mm": [18, 226, 101, 241],
+                  "lines": ["1. Invented figure"]
+                },
+                {
+                  "id": "p1-figure-1",
+                  "role": "figure",
+                  "bbox_mm": [20, 146, 99, 220],
+                  "graphic": "line_chart"
+                },
+                {
+                  "id": "p1-figure-caption-1",
+                  "role": "figure_caption",
+                  "bbox_mm": [20, 126, 99, 143],
+                  "lines": [
+                    "Figure 1. Fixed synthetic points used only",
+                    "to test caption and figure-region handling."
+                  ]
+                },
+                {
+                  "id": "p1-c1-body",
+                  "role": "body",
+                  "bbox_mm": [18, 76, 101, 119],
+                  "lines": [
+                    "The drawing does not report a real trend.",
+                    "Its coordinates are fixed in the spec."
+                  ]
+                }
+              ]
+            },
+            {
+              "id": "p1-c2",
+              "bbox_mm": [109, 24, 192, 242],
+              "blocks": [
+                {
+                  "id": "p1-c2-section",
+                  "role": "section_heading",
+                  "bbox_mm": [109, 226, 192, 241],
+                  "lines": ["2. Invented table"]
+                },
+                {
+                  "id": "p1-table-1",
+                  "role": "table",
+                  "bbox_mm": [111, 158, 190, 220],
+                  "graphic": "table"
+                },
+                {
+                  "id": "p1-table-caption-1",
+                  "role": "table_caption",
+                  "bbox_mm": [111, 136, 190, 155],
+                  "lines": [
+                    "Table 1. Fabricated values for deterministic",
+                    "table and caption extraction tests."
+                  ]
+                },
+                {
+                  "id": "p1-c2-body",
+                  "role": "body",
+                  "bbox_mm": [109, 86, 192, 130],
+                  "lines": [
+                    "The table values have no external source.",
+                    "Low confidence must never invite invention."
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "truth": {
+    "band_ids": ["p1-header", "p1-body"],
+    "column_ids": ["p1-header-c1", "p1-c1", "p1-c2"],
+    "roles": {
+      "p1-title": "title",
+      "p1-c1-section": "section_heading",
+      "p1-figure-1": "figure",
+      "p1-figure-caption-1": "figure_caption",
+      "p1-c1-body": "body",
+      "p1-c2-section": "section_heading",
+      "p1-table-1": "table",
+      "p1-table-caption-1": "table_caption",
+      "p1-c2-body": "body"
+    },
+    "reading_order": [
+      "p1-title",
+      "p1-c1-section",
+      "p1-figure-1",
+      "p1-figure-caption-1",
+      "p1-c1-body",
+      "p1-c2-section",
+      "p1-table-1",
+      "p1-table-caption-1",
+      "p1-c2-body"
+    ],
+    "cross_boundary_units": [],
+    "scenario_expectations": [
+      "complete_captions",
+      "figure_table_orange_priority",
+      "no_invented_interpretation"
+    ]
+  }
+}

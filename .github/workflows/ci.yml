@@ -1,0 +1,85 @@
+# SPDX-FileCopyrightText: 2026 academic-pdf-en-zh-reader contributors
+# SPDX-License-Identifier: Apache-2.0
+
+name: CI
+
+"on":
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  quality:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        with:
+          version: "0.12.6"
+          python-version: "3.12.13"
+          enable-cache: false
+      - name: Synchronize the frozen environment
+        run: uv sync --frozen --all-groups
+      - name: Test
+        run: uv run --frozen pytest -q
+      - name: Ruff lint
+        run: uv run --frozen ruff check .
+      - name: Ruff format check
+        run: uv run --frozen ruff format --check .
+      - name: Dependency and license inventory
+        run: uv run --frozen python scripts/check_dependency_policy.py
+      - name: Development release-state gate
+        run: uv run --frozen python scripts/check_release_readiness.py --mode development
+      - name: GitHub Actions policy
+        run: uv run --frozen python scripts/check_github_actions_policy.py
+
+  windows-runtime:
+    runs-on: windows-2025
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        with:
+          version: "0.12.6"
+          python-version: "3.12.13"
+          enable-cache: false
+      - name: Synchronize the frozen environment
+        run: uv sync --frozen --all-groups
+      - name: Test the Windows worker and production pipeline
+        run: uv run --frozen pytest -q
+
+  reuse:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+      - uses: fsfe/reuse-action@676e2d560c9a403aa252096d99fcab3e1132b0f5 # v6.0.0
+
+  codeql:
+    if: ${{ github.event.repository.private == false }}
+    runs-on: ubuntu-24.04
+    permissions:
+      actions: read
+      contents: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+      - uses: github/codeql-action/init@7211b7c8077ea37d8641b6271f6a365a22a5fbfa # v4.36.0
+        with:
+          languages: python
+      - uses: github/codeql-action/analyze@7211b7c8077ea37d8641b6271f6a365a22a5fbfa # v4.36.0

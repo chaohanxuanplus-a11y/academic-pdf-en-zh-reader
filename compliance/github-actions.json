@@ -1,0 +1,79 @@
+{
+  "schema_version": 1,
+  "reviewed_on": "2026-08-28",
+  "policy": "Only the reviewed action paths below may run. Every workflow reference must use the exact commit and carry the reviewed version as an adjacent comment.",
+  "actions": [
+    {
+      "repository": "actions/checkout",
+      "version": "v6.0.2",
+      "commit": "de0fac2e4500dabe0009e67214ff5f5447ce83dd",
+      "uses": ["actions/checkout"],
+      "license": "MIT",
+      "source": "https://github.com/actions/checkout/tree/v6.0.2",
+      "purpose": "Read-only repository checkout"
+    },
+    {
+      "repository": "astral-sh/setup-uv",
+      "version": "v9.0.0",
+      "commit": "c771a70e6277c0a99b617c7a806ffedaca235ff9",
+      "uses": ["astral-sh/setup-uv"],
+      "license": "Apache-2.0 OR MIT",
+      "source": "https://github.com/astral-sh/setup-uv/tree/v9.0.0",
+      "purpose": "Install the pinned uv 0.12.6 toolchain"
+    },
+    {
+      "repository": "actions/dependency-review-action",
+      "version": "v5.0.0",
+      "commit": "a1d282b36b6f3519aa1f3fc636f609c47dddb294",
+      "uses": ["actions/dependency-review-action"],
+      "license": "MIT",
+      "source": "https://github.com/actions/dependency-review-action/tree/v5.0.0",
+      "purpose": "Review pull-request dependency changes"
+    },
+    {
+      "repository": "github/codeql-action",
+      "version": "v4.36.0",
+      "commit": "7211b7c8077ea37d8641b6271f6a365a22a5fbfa",
+      "uses": ["github/codeql-action/init", "github/codeql-action/analyze"],
+      "license": "MIT",
+      "source": "https://github.com/github/codeql-action/tree/v4.36.0",
+      "purpose": "Initialize and analyze Python with CodeQL"
+    },
+    {
+      "repository": "pypa/gh-action-pip-audit",
+      "version": "v1.1.0",
+      "commit": "1220774d901786e6f652ae159f7b6bc8fea6d266",
+      "uses": ["pypa/gh-action-pip-audit"],
+      "license": "Apache-2.0",
+      "source": "https://github.com/pypa/gh-action-pip-audit/tree/v1.1.0",
+      "purpose": "Audit the frozen runtime dependency export"
+    },
+    {
+      "repository": "fsfe/reuse-action",
+      "version": "v6.0.0",
+      "commit": "676e2d560c9a403aa252096d99fcab3e1132b0f5",
+      "uses": ["fsfe/reuse-action"],
+      "license": "GPL-3.0-or-later",
+      "source": "https://github.com/fsfe/reuse-action/tree/v6.0.0",
+      "purpose": "Run isolated REUSE compliance lint; never redistributed"
+    },
+    {
+      "repository": "anchore/sbom-action",
+      "version": "v0.24.0",
+      "commit": "e22c389904149dbc22b58101806040fa8d37a610",
+      "uses": ["anchore/sbom-action"],
+      "license": "Apache-2.0",
+      "source": "https://github.com/anchore/sbom-action/tree/v0.24.0",
+      "purpose": "Generate SPDX JSON SBOMs for release candidates"
+    },
+    {
+      "repository": "actions/upload-artifact",
+      "version": "v7.0.1",
+      "commit": "043fb46d1a93c77aae656e7c1c64a875d1fc6a0a",
+      "uses": ["actions/upload-artifact"],
+      "license": "MIT",
+      "source": "https://github.com/actions/upload-artifact/tree/v7.0.1",
+      "purpose": "Upload release candidates only as workflow artifacts"
+    }
+  ]
+}

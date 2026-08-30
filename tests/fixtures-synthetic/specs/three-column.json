@@ -1,0 +1,139 @@
+{
+  "schema_version": 1,
+  "fixture_id": "three-column",
+  "title": "Synthetic Three-Column Brief",
+  "license": "CC0-1.0",
+  "creator": "academic-pdf-en-zh-reader contributors",
+  "source": "project-authored synthetic content",
+  "uses_system_fonts": false,
+  "uses_randomness": false,
+  "uses_current_time": false,
+  "pages": [
+    {
+      "page_number": 1,
+      "size": "A4",
+      "orientation": "portrait",
+      "bands": [
+        {
+          "id": "p1-header",
+          "bbox_mm": [18, 250, 192, 281],
+          "column_count": 1,
+          "columns": [
+            {
+              "id": "p1-header-c1",
+              "bbox_mm": [18, 250, 192, 281],
+              "blocks": [
+                {
+                  "id": "p1-title",
+                  "role": "title",
+                  "bbox_mm": [20, 261, 190, 280],
+                  "lines": ["Three Synthetic Columns for Topology Testing"]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "p1-body",
+          "bbox_mm": [18, 24, 192, 242],
+          "column_count": 3,
+          "columns": [
+            {
+              "id": "p1-c1",
+              "bbox_mm": [18, 24, 73, 242],
+              "blocks": [
+                {
+                  "id": "p1-c1-section",
+                  "role": "section_heading",
+                  "bbox_mm": [18, 226, 73, 241],
+                  "lines": ["1. Input"]
+                },
+                {
+                  "id": "p1-c1-body",
+                  "role": "body",
+                  "bbox_mm": [18, 150, 73, 223],
+                  "lines": [
+                    "Column one introduces",
+                    "a fixed synthetic input.",
+                    "Its width is narrow",
+                    "and explicitly known."
+                  ]
+                }
+              ]
+            },
+            {
+              "id": "p1-c2",
+              "bbox_mm": [78, 24, 133, 242],
+              "blocks": [
+                {
+                  "id": "p1-c2-section",
+                  "role": "section_heading",
+                  "bbox_mm": [78, 226, 133, 241],
+                  "lines": ["2. Process"]
+                },
+                {
+                  "id": "p1-c2-body",
+                  "role": "body",
+                  "bbox_mm": [78, 150, 133, 223],
+                  "lines": [
+                    "Column two describes",
+                    "a deterministic step.",
+                    "It follows column one",
+                    "in the reading order."
+                  ]
+                }
+              ]
+            },
+            {
+              "id": "p1-c3",
+              "bbox_mm": [138, 24, 192, 242],
+              "blocks": [
+                {
+                  "id": "p1-c3-section",
+                  "role": "section_heading",
+                  "bbox_mm": [138, 226, 192, 241],
+                  "lines": ["3. Output"]
+                },
+                {
+                  "id": "p1-c3-body",
+                  "role": "body",
+                  "bbox_mm": [138, 150, 192, 223],
+                  "lines": [
+                    "Column three closes",
+                    "the synthetic account.",
+                    "No leader crosses any",
+                    "multi-column content."
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "truth": {
+    "band_ids": ["p1-header", "p1-body"],
+    "column_ids": ["p1-header-c1", "p1-c1", "p1-c2", "p1-c3"],
+    "roles": {
+      "p1-title": "title",
+      "p1-c1-section": "section_heading",
+      "p1-c1-body": "body",
+      "p1-c2-section": "section_heading",
+      "p1-c2-body": "body",
+      "p1-c3-section": "section_heading",
+      "p1-c3-body": "body"
+    },
+    "reading_order": [
+      "p1-title",
+      "p1-c1-section",
+      "p1-c1-body",
+      "p1-c2-section",
+      "p1-c2-body",
+      "p1-c3-section",
+      "p1-c3-body"
+    ],
+    "cross_boundary_units": [],
+    "scenario_expectations": ["three_equal_columns", "no_leaders"]
+  }
+}

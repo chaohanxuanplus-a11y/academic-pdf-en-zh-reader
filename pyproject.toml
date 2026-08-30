@@ -1,0 +1,40 @@
+# SPDX-FileCopyrightText: 2026 academic-pdf-en-zh-reader contributors
+# SPDX-License-Identifier: Apache-2.0
+
+[project]
+name = "academic-pdf-en-zh-reader"
+version = "0.1.0.dev0"
+description = "Create A3 English-Chinese academic reading PDFs with deterministic mirrored layout."
+requires-python = ">=3.12,<3.13"
+license = "Apache-2.0"
+dependencies = [
+  "fonttools==4.63.0",
+  "jsonschema==4.26.0",
+  "pdfminer.six==20260107",
+  "pdfplumber==0.11.10",
+  "pillow==12.3.0",
+  "pypdf==6.16.2",
+  "pypdfium2==5.13.0",
+  "reportlab==5.0.1",
+]
+
+[dependency-groups]
+dev = [
+  "pytest==9.1.1",
+  "ruff==0.16.4",
+]
+
+[tool.uv]
+package = false
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "--strict-config --strict-markers --import-mode=importlib"
+pythonpath = ["src"]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 88
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]

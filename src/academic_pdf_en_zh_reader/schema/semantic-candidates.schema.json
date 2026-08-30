@@ -1,0 +1,221 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:academic-pdf-en-zh-reader:schema:semantic-candidates:1.0.0",
+  "title": "Bounded semantic annotation candidates",
+  "x-spdx-copyright": "2026 academic-pdf-en-zh-reader contributors",
+  "x-spdx-license-identifier": "Apache-2.0",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "artifact_kind",
+    "units_hash",
+    "translation_hash",
+    "review_hash",
+    "red_candidates",
+    "ambiguity_occurrences",
+    "teaching_candidates",
+    "figure_candidates"
+  ],
+  "properties": {
+    "schema_version": {"const": "1.0.0"},
+    "artifact_kind": {"const": "semantic-candidates"},
+    "units_hash": {"$ref": "#/$defs/sha256"},
+    "translation_hash": {"$ref": "#/$defs/sha256"},
+    "review_hash": {"$ref": "#/$defs/sha256"},
+    "red_candidates": {
+      "type": "array",
+      "maxItems": 5000,
+      "items": {"$ref": "#/$defs/red_candidate"}
+    },
+    "ambiguity_occurrences": {
+      "type": "array",
+      "maxItems": 5000,
+      "items": {"$ref": "#/$defs/ambiguity_occurrence"}
+    },
+    "teaching_candidates": {
+      "type": "array",
+      "maxItems": 2000,
+      "items": {"$ref": "#/$defs/teaching_candidate"}
+    },
+    "figure_candidates": {
+      "type": "array",
+      "maxItems": 500,
+      "items": {"$ref": "#/$defs/figure_candidate"}
+    }
+  },
+  "$defs": {
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "identifier": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256
+    },
+    "position": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 2147483647
+    },
+    "priority": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 1000000
+    },
+    "red_candidate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "candidate_id",
+        "unit_id",
+        "target_start",
+        "target_end",
+        "importance"
+      ],
+      "properties": {
+        "candidate_id": {"$ref": "#/$defs/identifier"},
+        "unit_id": {"$ref": "#/$defs/identifier"},
+        "target_start": {"$ref": "#/$defs/position"},
+        "target_end": {"$ref": "#/$defs/position"},
+        "importance": {
+          "enum": [
+            "other",
+            "key_mechanism",
+            "direct_result",
+            "core_conclusion"
+          ]
+        }
+      }
+    },
+    "ambiguity_occurrence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "ambiguity_key_id",
+        "unit_id",
+        "target_start",
+        "target_end"
+      ],
+      "properties": {
+        "ambiguity_key_id": {"$ref": "#/$defs/sha256"},
+        "unit_id": {"$ref": "#/$defs/identifier"},
+        "target_start": {"$ref": "#/$defs/position"},
+        "target_end": {"$ref": "#/$defs/position"}
+      }
+    },
+    "teaching_occurrence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "unit_id",
+        "source_start",
+        "source_end",
+        "target_start",
+        "target_end"
+      ],
+      "properties": {
+        "unit_id": {"$ref": "#/$defs/identifier"},
+        "source_start": {"$ref": "#/$defs/position"},
+        "source_end": {"$ref": "#/$defs/position"},
+        "target_start": {"$ref": "#/$defs/position"},
+        "target_end": {"$ref": "#/$defs/position"}
+      }
+    },
+    "teaching_candidate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "key",
+        "english_original",
+        "chinese_meaning",
+        "value_priority",
+        "occurrences"
+      ],
+      "properties": {
+        "key": {"$ref": "#/$defs/identifier"},
+        "english_original": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        },
+        "chinese_meaning": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        },
+        "value_priority": {"$ref": "#/$defs/priority"},
+        "occurrences": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 128,
+          "items": {"$ref": "#/$defs/teaching_occurrence"}
+        }
+      }
+    },
+    "direct_evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "evidence_kind",
+        "unit_id",
+        "source_start",
+        "source_end",
+        "quote"
+      ],
+      "properties": {
+        "evidence_kind": {"const": "semantic-unit"},
+        "unit_id": {"$ref": "#/$defs/identifier"},
+        "source_start": {"$ref": "#/$defs/position"},
+        "source_end": {"$ref": "#/$defs/position"},
+        "quote": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 8192
+        }
+      }
+    },
+    "figure_candidate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "key",
+        "figure_id",
+        "caption_unit_id",
+        "target_start",
+        "target_end",
+        "content",
+        "compact_content",
+        "evidence",
+        "value_priority",
+        "essential"
+      ],
+      "properties": {
+        "key": {"$ref": "#/$defs/identifier"},
+        "figure_id": {"$ref": "#/$defs/identifier"},
+        "caption_unit_id": {"$ref": "#/$defs/identifier"},
+        "target_start": {"$ref": "#/$defs/position"},
+        "target_end": {"$ref": "#/$defs/position"},
+        "content": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 8192
+        },
+        "compact_content": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 8192
+        },
+        "evidence": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 16,
+          "items": {"$ref": "#/$defs/direct_evidence"}
+        },
+        "value_priority": {"$ref": "#/$defs/priority"},
+        "essential": {"type": "boolean"}
+      }
+    }
+  }
+}
