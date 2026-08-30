@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "reviewed_on": "2026-08-28",
+  "reviewed_on": "2026-08-31",
   "policy": "Only the reviewed action paths below may run. Every workflow reference must use the exact commit and carry the reviewed version as an adjacent comment.",
   "actions": [
     {
@@ -11,6 +11,15 @@
       "license": "MIT",
       "source": "https://github.com/actions/checkout/tree/v6.0.2",
       "purpose": "Read-only repository checkout"
+    },
+    {
+      "repository": "actions/setup-python",
+      "version": "v7.0.0",
+      "commit": "5fda3b95a4ea91299a34e894583c3862153e4b97",
+      "uses": ["actions/setup-python"],
+      "license": "MIT",
+      "source": "https://github.com/actions/setup-python/tree/v7.0.0",
+      "purpose": "Install official CPython 3.12.13 for Windows isolation tests"
     },
     {
       "repository": "astral-sh/setup-uv",

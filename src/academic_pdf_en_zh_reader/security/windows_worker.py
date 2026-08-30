@@ -3797,9 +3797,10 @@ def run_security_probe() -> dict[str, object]:
     try:
         with tempfile.TemporaryDirectory(prefix="worker-probe-source-") as source_root:
             source = Path(source_root) / "paper.pdf"
+            sandbox_parent = Path(source_root) / "sandboxes"
             probe_bytes = b"%PDF-1.7\n%%EOF\n"
             source.write_bytes(probe_bytes)
-            with copy_untrusted_input(source) as copied:
+            with copy_untrusted_input(source, temp_parent=sandbox_parent) as copied:
                 minimum["private_input_copy"] = private_directory_is_current_user_only(
                     copied.root
                 )

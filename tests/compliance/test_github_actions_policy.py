@@ -45,6 +45,26 @@ class GitHubActionsPolicyTests(unittest.TestCase):
             self.assertNotRegex(text, r"(?m)^\s*-?\s*uses:\s*[^\n#]+@(v|main|master)\b")
         self.assertEqual(expected, actual)
 
+    def test_windows_runtime_uses_official_cpython(self) -> None:
+        ci = (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
+        quality, remaining = ci.split("  windows-runtime:\n", 1)
+        windows, _remaining_jobs = remaining.split("\n  reuse:\n", 1)
+        reviewed = next(
+            item
+            for item in self.inventory["actions"]
+            if item["repository"] == "actions/setup-python"
+        )
+
+        self.assertNotIn("actions/setup-python@", quality)
+        self.assertIn(
+            f"actions/setup-python@{reviewed['commit']} # {reviewed['version']}",
+            windows,
+        )
+        self.assertIn(
+            'uv sync --frozen --all-groups --python "$env:pythonLocation\\python.exe"',
+            windows,
+        )
+
     def test_mutable_or_unreviewed_action_is_rejected(self) -> None:
         original = (ROOT / ".github" / "workflows" / "ci.yml").read_text(
             encoding="utf-8"

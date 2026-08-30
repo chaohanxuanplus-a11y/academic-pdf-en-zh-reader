@@ -284,7 +284,9 @@ def validate(root: Path) -> tuple[str, ...]:
 
     required_text = {
         ".github/workflows/ci.yml": (
+            "actions/setup-python@",
             "uv sync --frozen --all-groups",
+            'uv sync --frozen --all-groups --python "$env:pythonLocation\\python.exe"',
             "pytest -q",
             "ruff check .",
             "ruff format --check .",
