@@ -19,7 +19,7 @@
       "uses": ["actions/setup-python"],
       "license": "MIT",
       "source": "https://github.com/actions/setup-python/tree/v7.0.0",
-      "purpose": "Install official CPython 3.12.13 for Windows isolation tests"
+      "purpose": "Install official CPython 3.12.10 for Windows isolation tests"
     },
     {
       "repository": "astral-sh/setup-uv",

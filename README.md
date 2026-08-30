@@ -54,7 +54,9 @@ creates an extra page.
 Run commands from the repository root. The locked environment requires Python
 3.12 (`>=3.12,<3.13`); [`.python-version`](.python-version) currently selects
 3.12.13. Install `uv` first, then synchronize the exact runtime and development
-dependencies recorded in `uv.lock`:
+dependencies recorded in `uv.lock`. Windows isolation CI additionally exercises
+CPython 3.12.10, the newest official Windows x64 binary in the supported 3.12
+line:
 
 ```text
 uv sync --frozen --all-groups

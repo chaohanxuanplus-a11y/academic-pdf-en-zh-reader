@@ -56,6 +56,7 @@ class GitHubActionsPolicyTests(unittest.TestCase):
         )
 
         self.assertNotIn("actions/setup-python@", quality)
+        self.assertIn('python-version: "3.12.10"', windows)
         self.assertIn(
             f"actions/setup-python@{reviewed['commit']} # {reviewed['version']}",
             windows,
