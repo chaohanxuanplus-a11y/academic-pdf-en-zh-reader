@@ -507,10 +507,15 @@ def test_delivery_finally_never_unlinks_a_staging_path_swapped_after_hash(
             competitor.rename(staging)
         return real_check(path)
 
+    race_injected = False
+
     def racing_hash_handle(handle: int) -> str:
+        nonlocal race_injected
         try:
-            staging.rename(owned_backup)
-            competitor.rename(staging)
+            if not race_injected:
+                race_injected = True
+                staging.rename(owned_backup)
+                competitor.rename(staging)
         except OSError:
             pass
         return real_hash_handle(handle)

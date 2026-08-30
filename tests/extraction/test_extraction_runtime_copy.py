@@ -3,11 +3,15 @@
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
+
+import pytest
 
 from academic_pdf_en_zh_reader.security import windows_worker
 
 
+@pytest.mark.skipif(os.name != "nt", reason="Windows extraction runtime closure")
 def test_extraction_runtime_is_content_addressed_and_pinned(tmp_path: Path) -> None:
     runtime = windows_worker._copy_worker_runtime(tmp_path, operation="extract")
 

@@ -276,7 +276,10 @@ def test_reparse_detection_failure_is_fail_closed(
             return True
         return real_check(path)
 
-    monkeypatch.setattr(cleanup_module, "_is_reparse_or_symlink", injected)
+    if os.name == "nt":
+        monkeypatch.setattr(cleanup_module, "_is_reparse_or_symlink", injected)
+    else:
+        monkeypatch.setattr(cleanup_module, "_posix_tree_is_safe", lambda _fd: False)
 
     result = cleanup_after_job(managed_root, job_root, outcome="failure", now=NOW)
 

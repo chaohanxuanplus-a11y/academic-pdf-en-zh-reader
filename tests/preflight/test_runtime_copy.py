@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 import pytest
@@ -66,6 +67,7 @@ def test_runtime_source_rejects_symlink_or_reparse(tmp_path: Path) -> None:
     assert windows_worker._runtime_source_is_safe(tmp_path, link) is False
 
 
+@pytest.mark.skipif(os.name != "nt", reason="Windows private Python runtime")
 def test_private_python_runtime_includes_consoleless_entrypoint(
     tmp_path: Path,
 ) -> None:
