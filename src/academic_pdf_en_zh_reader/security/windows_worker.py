@@ -2238,8 +2238,13 @@ def _run_worker(
         child_python = (
             appcontainer.python_runtime_root / "pythonw.exe"
             if appcontainer is not None
-            else Path(_python_executable())
+            else Path(_python_executable()).with_name("pythonw.exe")
         )
+        if not child_python.is_file():
+            raise SandboxUnavailableError(
+                "headless Python worker executable is missing"
+            )
+        provenance["worker_executable"] = child_python.name
         command = _child_command(
             appcontainer.runtime_root if appcontainer is not None else None,
             child_python,

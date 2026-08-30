@@ -85,6 +85,7 @@ def test_worker_uses_restricted_token_and_enforced_job_limits(
         "SeChangeNotifyPrivilege"
     }
     assert result.provenance["restricted_token"] is True
+    assert result.provenance["worker_executable"] == "pythonw.exe"
     token_origin = result.provenance["restricted_token_origin"]
     assert token_origin == "inherited_restricted_token_duplicated" or (
         "logon_sid" in token_origin
