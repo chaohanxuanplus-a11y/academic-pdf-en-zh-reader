@@ -59,6 +59,8 @@ jobs:
         run: uv sync --frozen --all-groups --python "$env:pythonLocation\python.exe"
       - name: Smoke test the restricted Windows worker
         run: uv run --python "$env:pythonLocation\python.exe" --frozen pytest -q tests/security/test_windows_worker_limits.py::test_worker_uses_restricted_token_and_enforced_job_limits
+      - name: Verify the production AppContainer security probe
+        run: uv run --python "$env:pythonLocation\python.exe" --frozen pytest -q tests/security/test_windows_worker_limits.py::test_full_security_probe_is_truthful_and_fail_closed
       - name: Test the Windows worker and production pipeline
         run: uv run --python "$env:pythonLocation\python.exe" --frozen pytest -q
 

@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import ctypes
+import json
 import os
 from pathlib import Path
 from types import SimpleNamespace
@@ -845,7 +846,9 @@ def test_full_security_probe_is_truthful_and_fail_closed() -> None:
         assert probe["provenance"]["appcontainer_api_available"] is True
         assert probe["provenance"]["appcontainer_launch_verified"] is False
     else:
-        assert probe["passed"] is True, probe
+        if probe["passed"] is not True:
+            print(json.dumps(probe, ensure_ascii=False, indent=2, sort_keys=True))
+            pytest.fail("security probe failed; full report is above", pytrace=False)
         assert all(probe["minimum_contract"].values())
         assert probe["provenance"]["appcontainer_implemented"] is True
         assert probe["provenance"]["network_isolation_implemented"] is True
