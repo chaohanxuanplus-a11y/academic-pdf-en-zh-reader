@@ -538,6 +538,7 @@ _PROJECT_RUNTIME_FILES = (
     Path("security/unsupported_worker.py"),
     Path("security/windows_worker.py"),
     Path("security/worker_protocol.py"),
+    Path("version.py"),
 )
 
 

@@ -3,6 +3,6 @@
 
 """Deterministic English-to-Chinese academic PDF reading tools."""
 
-from academic_pdf_en_zh_reader.constants import __version__
+from academic_pdf_en_zh_reader.version import __version__
 
 __all__ = ["__version__"]

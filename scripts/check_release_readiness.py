@@ -136,11 +136,13 @@ def _version_metadata_errors(
         errors.append(f"cannot read project version: {exc}")
         return errors
     try:
-        constants = (
-            root / "src" / "academic_pdf_en_zh_reader" / "constants.py"
+        version_module = (
+            root / "src" / "academic_pdf_en_zh_reader" / "version.py"
         ).read_text(encoding="utf-8")
         match = re.search(
-            r'^__version__\s*=\s*["\']([^"\']+)["\']\s*$', constants, re.MULTILINE
+            r'^__version__\s*=\s*["\']([^"\']+)["\']\s*$',
+            version_module,
+            re.MULTILINE,
         )
         code_version = match.group(1) if match is not None else None
     except OSError as exc:

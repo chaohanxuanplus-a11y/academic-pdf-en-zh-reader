@@ -32,6 +32,7 @@ def test_worker_runtime_copies_only_fixed_project_core_and_pypdf(
     assert (
         runtime.root / "academic_pdf_en_zh_reader" / "job" / "canonical_json.py"
     ).is_file()
+    assert (runtime.root / "academic_pdf_en_zh_reader" / "version.py").is_file()
     assert not (runtime.root / "cryptography").exists()
     assert not any(
         path.suffix.casefold() in {".pyd", ".dll"} for path, _size, _hash in manifest

@@ -93,7 +93,7 @@ def _synthetic_ready_tree(root: Path) -> None:
         '[project]\nname = "academic-pdf-en-zh-reader"\nversion = "0.1.0"\n',
     )
     _write(
-        root / "src" / "academic_pdf_en_zh_reader" / "constants.py",
+        root / "src" / "academic_pdf_en_zh_reader" / "version.py",
         '__version__ = "0.1.0"\n',
     )
     _write(
