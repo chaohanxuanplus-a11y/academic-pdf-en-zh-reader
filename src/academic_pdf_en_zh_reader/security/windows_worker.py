@@ -2042,33 +2042,41 @@ def _close_job_and_verify_descendant(
     job: object,
     process_id: int,
 ) -> dict[str, object]:
-    descendant = _kernel32.OpenProcess(0x00100000 | 0x1000, False, process_id)
+    descendant = _kernel32.OpenProcess(0x00100000, False, process_id)
     open_error = ctypes.get_last_error() if not descendant else 0
-    _close_handle(job)
     if not descendant:
+        _close_handle(job)
         return {
             "verified": False,
+            "alive_before_close": False,
             "reason": (
                 "OpenProcess(SYNCHRONIZE) failed before Job close "
                 f"(WinError {open_error})"
             ),
         }
     try:
+        wait_before_close = _kernel32.WaitForSingleObject(descendant, 0)
+        if wait_before_close != 258:
+            _close_handle(job)
+            return {
+                "verified": False,
+                "alive_before_close": False,
+                "reason": (
+                    "descendant was not alive before Job close "
+                    f"(wait returned {wait_before_close})"
+                ),
+            }
+        _close_handle(job)
         wait_result = _kernel32.WaitForSingleObject(descendant, 2000)
         if wait_result != 0:
             return {
                 "verified": False,
+                "alive_before_close": True,
                 "reason": f"descendant wait returned {wait_result}",
             }
-        exit_code = wintypes.DWORD()
-        if not _kernel32.GetExitCodeProcess(descendant, ctypes.byref(exit_code)):
-            return {
-                "verified": False,
-                "reason": "GetExitCodeProcess(descendant) failed",
-            }
         return {
-            "verified": exit_code.value != 259,
-            "exit_code": int(exit_code.value),
+            "verified": True,
+            "alive_before_close": True,
         }
     finally:
         _close_handle(descendant)
@@ -2761,10 +2769,41 @@ def _probe_case(request: WorkerRequest) -> dict[str, object]:
     case = request.parameters.get("case")
     if not isinstance(case, str):
         raise ValueError("probe case must be a string")
-    if _current_process_is_appcontainer():
+    is_appcontainer = _current_process_is_appcontainer()
+    if is_appcontainer:
         _resolve_prevalidated_appcontainer_path(request.input_path, must_exist=True)
     else:
         resolve_controlled_path(Path.cwd(), request.input_path, must_exist=True)
+
+    def spawn_probe_descendant() -> subprocess.Popen[bytes]:
+        def stdio_path(name: str) -> Path:
+            if is_appcontainer:
+                return _resolve_prevalidated_appcontainer_path(
+                    name,
+                    must_exist=False,
+                )
+            return resolve_controlled_path(Path.cwd(), name, must_exist=False)
+
+        with (
+            stdio_path("probe-child-stdin.bin").open("x+b") as child_stdin,
+            stdio_path("probe-child-stdout.bin").open("x+b") as child_stdout,
+            stdio_path("probe-child-stderr.bin").open("x+b") as child_stderr,
+        ):
+            return subprocess.Popen(  # noqa: S603 - adversarial sandbox probe
+                [
+                    _python_executable(),
+                    "-I",
+                    "-S",
+                    "-B",
+                    "-c",
+                    "import time;time.sleep(10)",
+                ],
+                close_fds=True,
+                stdin=child_stdin,
+                stdout=child_stdout,
+                stderr=child_stderr,
+            )
+
     if case == "inspect":
         restricted, privileges, appcontainer, capability_count = (
             _current_process_security()
@@ -2829,13 +2868,7 @@ def _probe_case(request: WorkerRequest) -> dict[str, object]:
     if case == "spawn_child":
         child: subprocess.Popen[bytes] | None = None
         try:
-            child = subprocess.Popen(  # noqa: S603 - adversarial sandbox probe
-                [_python_executable(), "-I", "-c", "import time;time.sleep(10)"],
-                close_fds=True,
-                stdin=subprocess.DEVNULL,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-            )
+            child = spawn_probe_descendant()
             time.sleep(0.2)
             denied = child.poll() is not None
             if not denied:
@@ -2852,14 +2885,15 @@ def _probe_case(request: WorkerRequest) -> dict[str, object]:
                     if child.poll() is None:
                         child.terminate()
     if case == "spawn_for_kill_probe":
-        child = subprocess.Popen(  # noqa: S603 - verifies kill-on-close
-            [_python_executable(), "-I", "-c", "import time;time.sleep(10)"],
-            close_fds=True,
-            stdin=subprocess.DEVNULL,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-        )
-        return {"child_pid": child.pid}
+        try:
+            child = spawn_probe_descendant()
+        except OSError as error:
+            return {
+                "child_pid": None,
+                "spawn_error_code": _normalized_windows_error(error),
+                "spawn_error_stage": "popen",
+            }
+        return {"child_pid": child.pid, "spawn_error_code": None}
     if case == "busy_loop":
         while True:
             pass
@@ -3992,6 +4026,9 @@ def run_security_probe() -> dict[str, object]:
                         for message in process_messages
                     )
                 )
+                provenance["process_limit_worker_evidence"] = (
+                    child_limit.response.result
+                )
                 provenance["process_limit_job_messages"] = process_messages
                 record_handles("after_process_count_limit")
 
@@ -4007,8 +4044,9 @@ def run_security_probe() -> dict[str, object]:
                 minimum["kill_on_job_close"] = bool(
                     kill_probe.provenance.get("descendant_killed_on_job_close")
                 )
-                provenance["kill_on_close_evidence"] = kill_probe.provenance.get(
-                    "descendant_kill_evidence"
+                provenance["kill_on_close_evidence"] = (
+                    kill_probe.provenance.get("descendant_kill_evidence")
+                    or kill_probe.response.result
                 )
                 record_handles("after_kill_on_close")
 

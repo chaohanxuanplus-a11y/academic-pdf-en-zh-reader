@@ -199,6 +199,7 @@ def test_handle_allowlist_probe_distinguishes_event_from_invalid_handle(
 
 
 def test_process_limit_probe_treats_invalid_popen_handle_as_denied(
+    tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     class InvalidHandleProcess:
@@ -216,18 +217,30 @@ def test_process_limit_probe_treats_invalid_popen_handle_as_denied(
     monkeypatch.setattr(
         windows_worker,
         "resolve_controlled_path",
-        lambda *_args, **_kwargs: None,
+        lambda _root, relative, **_kwargs: tmp_path / str(relative),
     )
+    stdio_streams = []
+
+    def fake_popen(*_args: object, **kwargs: object) -> InvalidHandleProcess:
+        stdio_streams.extend([kwargs["stdin"], kwargs["stdout"], kwargs["stderr"]])
+        return InvalidHandleProcess()
+
     monkeypatch.setattr(
         windows_worker.subprocess,
         "Popen",
-        lambda *_args, **_kwargs: InvalidHandleProcess(),
+        fake_popen,
     )
 
     result = windows_worker._probe_case(_request("spawn_child"))
 
     assert result["spawn_denied"] is True
     assert result["error_code"] == 0xC0000008
+    assert {Path(stream.name).name for stream in stdio_streams} == {
+        "probe-child-stdin.bin",
+        "probe-child-stdout.bin",
+        "probe-child-stderr.bin",
+    }
+    assert all(stream.closed for stream in stdio_streams)
 
 
 def test_wall_clock_timeout_terminates_the_job(
@@ -269,7 +282,36 @@ def test_kill_on_close_uses_retained_synchronize_handle(
 
     assert result.provenance["descendant_killed_on_job_close"] is True
     assert result.provenance["descendant_kill_evidence"]["verified"] is True
+    assert result.provenance["descendant_kill_evidence"]["alive_before_close"] is True
     assert "reason" not in result.provenance["descendant_kill_evidence"]
+
+
+def test_kill_on_close_rejects_a_descendant_that_already_exited(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    closed: list[int] = []
+    monkeypatch.setattr(
+        windows_worker._kernel32,
+        "OpenProcess",
+        lambda *_args: 222,
+    )
+    monkeypatch.setattr(
+        windows_worker._kernel32,
+        "WaitForSingleObject",
+        lambda _handle, _timeout: 0,
+    )
+    monkeypatch.setattr(
+        windows_worker,
+        "_close_handle",
+        lambda handle: closed.append(int(handle)),
+    )
+
+    evidence = windows_worker._close_job_and_verify_descendant(111, 1234)
+
+    assert evidence["verified"] is False
+    assert evidence["alive_before_close"] is False
+    assert "not alive before Job close" in str(evidence["reason"])
+    assert closed == [111, 222]
 
 
 def test_repeated_restricted_workers_do_not_leak_parent_handles(
