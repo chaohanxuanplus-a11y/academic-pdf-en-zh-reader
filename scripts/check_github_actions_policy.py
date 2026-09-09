@@ -44,12 +44,12 @@ def _run_scripts(text: str) -> tuple[str, ...]:
     index = 0
     while index < len(lines):
         line = lines[index]
-        match = re.match(r"^(\s*)run:\s*(.*)$", line)
+        match = re.match(r"^([ \t]*)(-[ \t]+)?run:[ \t]*(.*)$", line)
         if match is None:
             index += 1
             continue
-        indent = len(match.group(1))
-        value = match.group(2).strip()
+        indent = len(match.group(1)) + len(match.group(2) or "")
+        value = match.group(3).strip()
         if value not in {"|", ">", "|-", ">-"}:
             scripts.append(value)
             index += 1
@@ -64,6 +64,42 @@ def _run_scripts(text: str) -> tuple[str, ...]:
             index += 1
         scripts.append("\n".join(block))
     return tuple(scripts)
+
+
+def _release_job_bypass_errors(
+    relative_path: str, job_name: str, body: str
+) -> list[str]:
+    errors: list[str] = []
+    control_key = re.search(
+        r"""(?im)(?:^|\{|,)[ \t]*(?:-[ \t]*)?["']?"""
+        r"""(if|continue-on-error|timeout(?:-minutes)?)["']?[ \t]*:""",
+        body,
+    )
+    if control_key is not None:
+        errors.append(
+            f"{relative_path}: {job_name} must not use "
+            f"{control_key.group(1)} bypass controls"
+        )
+
+    checkout_count = body.count("actions/checkout@")
+    if checkout_count != 1:
+        errors.append(f"{relative_path}: {job_name} must use exactly one checkout")
+    if re.search(r"""(?im)(?:^|\{|,)\s*["']?(repository|ref)["']?\s*:""", body):
+        errors.append(f"{relative_path}: {job_name} checkout must use the workflow SHA")
+    for line in body.splitlines():
+        if re.search(r"(?i)\bgit(?:\.exe)?\b", line) is None:
+            continue
+        if (
+            job_name == "windows-2025-production-gate"
+            and line.strip() == "$sha = git rev-parse HEAD"
+        ):
+            continue
+        errors.append(
+            f"{relative_path}: {job_name} must not change the checked-out "
+            "source or run non-binding git commands"
+        )
+        return errors
+    return errors
 
 
 def _inventory_errors(inventory: dict[str, Any]) -> list[str]:
@@ -184,6 +220,15 @@ def validate_workflow_text(
         if re.search(r"(?im)\b(curl|wget)\b.*\|", script):
             errors.append(f"{relative_path}: remote pipe-to-shell is forbidden")
 
+    if relative_path.endswith("ci.yml"):
+        current_gate = "check_release_readiness.py --mode current"
+        if current_gate not in text:
+            errors.append(f"{relative_path}: CI must use the current readiness mode")
+        if "check_release_readiness.py --mode development" in text:
+            errors.append(
+                f"{relative_path}: CI must not pin the development readiness mode"
+            )
+
     if relative_path.endswith("release.yml"):
         trigger_match = re.search(r'(?ms)^"on":\s*\n(?P<body>.*?)^permissions:', text)
         trigger_body = trigger_match.group("body") if trigger_match else ""
@@ -233,6 +278,200 @@ def validate_workflow_text(
             if token not in text:
                 errors.append(
                     f"{relative_path}: required release control missing: {token}"
+                )
+
+        job_pattern = (
+            r"(?ms)^  {job_id}:\s*\n(?P<body>.*?)(?=^  [A-Za-z0-9_-]+:\s*\n|\Z)"
+        )
+        for protected_job in (
+            "build-candidates",
+            "windows-2025-production-gate",
+        ):
+            if len(re.findall(rf"(?m)^  {re.escape(protected_job)}:\s*$", text)) != 1:
+                errors.append(
+                    f"{relative_path}: {protected_job} job must be declared "
+                    "exactly once"
+                )
+        windows_match = re.search(
+            job_pattern.format(job_id="windows-2025-production-gate"), text
+        )
+        if windows_match is None:
+            errors.append(
+                f"{relative_path}: release workflow requires the "
+                "windows-2025-production-gate job"
+            )
+            windows_body = ""
+        else:
+            windows_body = windows_match.group("body")
+            windows_scripts = _run_scripts(windows_body)
+            if not re.search(r"(?m)^    runs-on: windows-2025\s*$", windows_body):
+                errors.append(
+                    f"{relative_path}: Windows production gate must use windows-2025"
+                )
+            if 'python-version: "3.12.10"' not in windows_body:
+                errors.append(
+                    f"{relative_path}: Windows production gate must pin CPython 3.12.10"
+                )
+            probe_command = (
+                'uv run --python "$env:pythonLocation\\python.exe" --frozen '
+                "python scripts/probe_worker_sandbox.py"
+            )
+            if probe_command not in windows_scripts:
+                errors.append(
+                    f"{relative_path}: Windows production gate must directly run "
+                    "scripts/probe_worker_sandbox.py"
+                )
+            finish_command = (
+                'uv run --python "$env:pythonLocation\\python.exe" --frozen pytest -q '
+                "tests/security/test_finish_worker_boundary.py::"
+                "test_production_finish_completes_render_and_qa_in_lpac"
+            )
+            if finish_command not in windows_scripts:
+                errors.append(
+                    f"{relative_path}: Windows production gate must directly run the "
+                    "production finish LPAC test"
+                )
+            trusted_outputs = (
+                "lpac-probe-outcome: ${{ steps.lpac-probe.outcome }}",
+                "lpac-finish-outcome: ${{ steps.lpac-finish.outcome }}",
+                "lpac-tested-head-sha: ${{ steps.lpac-tested-head.outputs.sha }}",
+            )
+            for output in trusted_outputs:
+                output_name = output.split(":", 1)[0]
+                if (
+                    output not in windows_body
+                    or windows_body.count(f"{output_name}:") != 1
+                ):
+                    errors.append(
+                        f"{relative_path}: Windows production gate output is not "
+                        f"trusted: {output_name}"
+                    )
+            for step_id in ("lpac-tested-head", "lpac-probe", "lpac-finish"):
+                if windows_body.count(f"id: {step_id}") != 1:
+                    errors.append(
+                        f"{relative_path}: Windows production gate requires the "
+                        f"{step_id} step id"
+                    )
+            if not any(
+                "git rev-parse HEAD" in script
+                and '"sha=$sha" >> $env:GITHUB_OUTPUT' in script
+                for script in windows_scripts
+            ):
+                errors.append(
+                    f"{relative_path}: Windows production gate must report the "
+                    "tested commit SHA"
+                )
+            tested_head_commands = [
+                line.strip()
+                for script in windows_scripts
+                for line in script.splitlines()
+                if line.strip() == "$sha = git rev-parse HEAD"
+            ]
+            if tested_head_commands != ["$sha = git rev-parse HEAD"]:
+                errors.append(
+                    f"{relative_path}: Windows production gate must use exactly one "
+                    "fixed tested-HEAD git command"
+                )
+            if windows_body.find("id: lpac-tested-head") < windows_body.find(
+                "id: lpac-finish"
+            ):
+                errors.append(
+                    f"{relative_path}: tested commit SHA must be recorded after the "
+                    "LPAC finish step"
+                )
+
+        build_match = re.search(job_pattern.format(job_id="build-candidates"), text)
+        if build_match is None:
+            errors.append(f"{relative_path}: build-candidates job is required")
+            build_body = ""
+        else:
+            build_body = build_match.group("body")
+            if not re.search(
+                r"(?m)^    needs: windows-2025-production-gate\s*$", build_body
+            ):
+                errors.append(
+                    f"{relative_path}: build-candidates must need "
+                    "windows-2025-production-gate"
+                )
+            if len(re.findall(r"(?m)^    needs:\s*", build_body)) != 1:
+                errors.append(
+                    f"{relative_path}: build-candidates must declare exactly one "
+                    "gate dependency"
+                )
+
+            trusted_gate_values = (
+                ("RELEASE_LPAC_SIGNAL_SCHEMA", '"1"'),
+                (
+                    "RELEASE_LPAC_GATE_RESULT",
+                    "${{ needs.windows-2025-production-gate.result }}",
+                ),
+                (
+                    "RELEASE_LPAC_PROBE_OUTCOME",
+                    "${{ needs.windows-2025-production-gate.outputs."
+                    "lpac-probe-outcome }}",
+                ),
+                (
+                    "RELEASE_LPAC_FINISH_OUTCOME",
+                    "${{ needs.windows-2025-production-gate.outputs."
+                    "lpac-finish-outcome }}",
+                ),
+                (
+                    "RELEASE_LPAC_TESTED_HEAD_SHA",
+                    "${{ needs.windows-2025-production-gate.outputs."
+                    "lpac-tested-head-sha }}",
+                ),
+                ("RELEASE_LPAC_RUN_ID", "${{ github.run_id }}"),
+                ("RELEASE_LPAC_RUN_ATTEMPT", "${{ github.run_attempt }}"),
+            )
+            job_env_matches = list(
+                re.finditer(
+                    r"(?m)^    env:[ \t]*\r?\n"
+                    r"(?P<body>(?:^      [^\r\n]*(?:\r?\n|\Z))+)",
+                    build_body,
+                )
+            )
+            if len(job_env_matches) != 1:
+                errors.append(
+                    f"{relative_path}: build-candidates must declare exactly one "
+                    "job-level live-gate environment"
+                )
+            job_env_body = (
+                job_env_matches[0].group("body") if len(job_env_matches) == 1 else ""
+            )
+            for variable, expression in trusted_gate_values:
+                expected_line = f"      {variable}: {expression}"
+                key_occurrences = re.findall(
+                    rf"(?im)(?:^|\{{|,)[ \t]*[\"']?{re.escape(variable)}"
+                    r"[\"']?[ \t]*:",
+                    build_body,
+                )
+                if expected_line not in job_env_body or len(key_occurrences) != 1:
+                    errors.append(
+                        f"{relative_path}: release readiness and artifact build must "
+                        "inherit exactly one trusted job-level Windows gate value: "
+                        f"{variable}"
+                    )
+
+        for job_name, job_body in (
+            ("build-candidates", build_body),
+            ("windows-2025-production-gate", windows_body),
+        ):
+            errors.extend(_release_job_bypass_errors(relative_path, job_name, job_body))
+
+        protected_github_variables = (
+            "GITHUB_ACTIONS",
+            "GITHUB_EVENT_NAME",
+            "GITHUB_REPOSITORY",
+            "GITHUB_RUN_ATTEMPT",
+            "GITHUB_RUN_ID",
+            "GITHUB_SERVER_URL",
+            "GITHUB_SHA",
+            "GITHUB_WORKFLOW_REF",
+        )
+        for variable in protected_github_variables:
+            if re.search(rf"(?m)^\s+{variable}:\s*", build_body):
+                errors.append(
+                    f"{relative_path}: build-candidates must not override {variable}"
                 )
 
     return tuple(errors)
@@ -289,16 +528,22 @@ def validate(root: Path) -> tuple[str, ...]:
             'uv sync --frozen --all-groups --python "$env:pythonLocation\\python.exe"',
             'uv run --python "$env:pythonLocation\\python.exe" --frozen pytest -q',
             "test_worker_uses_restricted_token_and_enforced_job_limits",
+            "python scripts/probe_worker_sandbox.py",
             "pytest -q",
             "ruff check .",
             "ruff format --check .",
             "check_dependency_policy.py",
-            "check_release_readiness.py --mode development",
+            "check_release_readiness.py --mode current",
             "check_github_actions_policy.py",
             "fsfe/reuse-action@",
             "github/codeql-action/init@",
             "github/codeql-action/analyze@",
-            "codeql:\n    if: ${{ github.event.repository.private == false }}",
+            "- if: ${{ github.event.repository.private == true }}\n"
+            "        uses: github/codeql-action/analyze@",
+            "upload: never",
+            "- if: ${{ github.event.repository.private == false }}\n"
+            "        uses: github/codeql-action/analyze@",
+            "upload: always",
         ),
         ".github/workflows/dependency-review.yml": (
             "actions/dependency-review-action@",

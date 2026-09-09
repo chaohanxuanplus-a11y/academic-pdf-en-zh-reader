@@ -1,7 +1,7 @@
 # SPDX-FileCopyrightText: 2026 academic-pdf-en-zh-reader contributors
 # SPDX-License-Identifier: Apache-2.0
 
-"""Freeze one low-priority provenance card on a safe reference-only page."""
+"""Freeze the final provenance and responsibility card without moving content."""
 
 from __future__ import annotations
 
@@ -18,6 +18,7 @@ from academic_pdf_en_zh_reader.job.hashing import sha256_canonical
 from academic_pdf_en_zh_reader.rendering.contracts import OverlayPlanError
 from academic_pdf_en_zh_reader.rendering.page_geometry import (
     A3_LANDSCAPE_HEIGHT_MPT,
+    A3_LANDSCAPE_WIDTH_MPT,
     A4_WIDTH_MPT,
 )
 from academic_pdf_en_zh_reader.typography.cjk_breaker import break_text
@@ -32,6 +33,80 @@ BRAND_MANIFEST_PATH = PROJECT_ROOT / "assets" / "branding" / "brand-manifest.jso
 _BRAND_DIR = (PROJECT_ROOT / "assets" / "branding").resolve()
 _BODY_COLOR = "#111111"
 _MUTED_COLOR = "#666666"
+_LAYOUT_POSITIVE_INT_FIELDS = (
+    "policy_version",
+    "page_margin_mpt",
+    "card_max_width_mpt",
+    "card_min_width_mpt",
+    "card_padding_x_mpt",
+    "card_padding_y_mpt",
+    "logo_size_mpt",
+    "section_gap_mpt",
+    "brand_pair_gap_mpt",
+    "brand_size_mpt",
+    "brand_line_height_mpt",
+    "brand_en_size_mpt",
+    "brand_en_line_height_mpt",
+    "skill_size_mpt",
+    "skill_line_height_mpt",
+    "github_size_mpt",
+    "github_line_height_mpt",
+    "disclaimer_size_mpt",
+    "disclaimer_line_height_mpt",
+)
+
+
+def _validated_brand_layout(value: object, *, code: str) -> dict[str, int]:
+    def invalid() -> OverlayPlanError:
+        return OverlayPlanError(code, "brand manifest layout is invalid")
+
+    if not isinstance(value, Mapping) or set(value) != set(_LAYOUT_POSITIVE_INT_FIELDS):
+        raise invalid()
+    if any(
+        field not in value or type(value[field]) is not int or int(value[field]) <= 0
+        for field in _LAYOUT_POSITIVE_INT_FIELDS
+    ):
+        raise invalid()
+    layout = {field: int(value[field]) for field in _LAYOUT_POSITIVE_INT_FIELDS}
+    page_margin = layout["page_margin_mpt"]
+    panel_width = A4_WIDTH_MPT - 2 * page_margin
+    panel_height = A3_LANDSCAPE_HEIGHT_MPT - 2 * page_margin
+    card_width = min(layout["card_max_width_mpt"], panel_width)
+    inner_width = card_width - 2 * layout["card_padding_x_mpt"]
+    text_pairs = (
+        (layout["brand_size_mpt"], layout["brand_line_height_mpt"]),
+        (layout["brand_en_size_mpt"], layout["brand_en_line_height_mpt"]),
+        (layout["skill_size_mpt"], layout["skill_line_height_mpt"]),
+        (layout["github_size_mpt"], layout["github_line_height_mpt"]),
+        (
+            layout["disclaimer_size_mpt"],
+            layout["disclaimer_line_height_mpt"],
+        ),
+    )
+    minimum_card_height = (
+        2 * layout["card_padding_y_mpt"]
+        + layout["logo_size_mpt"]
+        + layout["brand_line_height_mpt"]
+        + layout["brand_en_line_height_mpt"]
+        + layout["skill_line_height_mpt"]
+        + layout["github_line_height_mpt"]
+        + 6 * layout["disclaimer_line_height_mpt"]
+        + layout["brand_pair_gap_mpt"]
+        + 4 * layout["section_gap_mpt"]
+    )
+    if (
+        layout["policy_version"] != 1
+        or panel_width <= 0
+        or panel_height <= 0
+        or layout["card_min_width_mpt"] > layout["card_max_width_mpt"]
+        or card_width < layout["card_min_width_mpt"]
+        or inner_width <= 0
+        or layout["logo_size_mpt"] > inner_width
+        or any(size > line_height for size, line_height in text_pairs)
+        or minimum_card_height >= panel_height
+    ):
+        raise invalid()
+    return layout
 
 
 def _mpt_ceil(value_pt: float) -> int:
@@ -53,8 +128,8 @@ def load_brand_manifest(
 ) -> tuple[dict[str, object], Path, str]:
     """Load and verify the fixed local brand asset without trusting plan paths."""
 
-    manifest_path = Path(path).resolve(strict=True)
     try:
+        manifest_path = Path(path).resolve(strict=True)
         manifest_path.relative_to(_BRAND_DIR)
         raw = manifest_path.read_bytes()
         value = json.loads(raw.decode("utf-8"))
@@ -83,6 +158,7 @@ def load_brand_manifest(
         or any(not isinstance(item, str) or not item for item in disclaimer_lines)
     ):
         raise OverlayPlanError("BRAND_ASSET_INVALID", "brand manifest is incomplete")
+    _validated_brand_layout(layout, code="BRAND_ASSET_INVALID")
     raw_path = image.get("path")
     expected_hash = image.get("sha256")
     if (
@@ -91,18 +167,24 @@ def load_brand_manifest(
         or len(expected_hash) != 64
     ):
         raise OverlayPlanError("BRAND_ASSET_INVALID", "brand image identity is invalid")
-    asset_path = (PROJECT_ROOT / raw_path).resolve(strict=True)
     try:
+        asset_path = (PROJECT_ROOT / raw_path).resolve(strict=True)
         asset_path.relative_to(_BRAND_DIR)
-    except ValueError as exc:
+    except (OSError, ValueError) as exc:
         raise OverlayPlanError(
             "BRAND_ASSET_INVALID", "brand image path is invalid"
         ) from exc
-    if (
-        not asset_path.is_file()
-        or asset_path.stat().st_size != image.get("size")
-        or _sha256(asset_path) != expected_hash
-    ):
+    try:
+        asset_bytes_differ = (
+            not asset_path.is_file()
+            or asset_path.stat().st_size != image.get("size")
+            or _sha256(asset_path) != expected_hash
+        )
+    except OSError as exc:
+        raise OverlayPlanError(
+            "BRAND_ASSET_INVALID", "brand image cannot be read"
+        ) from exc
+    if asset_bytes_differ:
         raise OverlayPlanError("BRAND_ASSET_INVALID", "brand image bytes differ")
     try:
         with Image.open(asset_path) as opened:
@@ -125,34 +207,105 @@ def select_reference_only_page(
     source: Mapping[str, object],
     layout: Mapping[str, object],
 ) -> int | None:
-    """Choose an empty native page with references and no required text."""
+    """Choose the first native reference region with no non-reference text."""
 
-    source_pages = {
-        int(page["page_number"]): page
-        for page in source["pages"]  # type: ignore[index]
-    }
+    regions = reference_only_regions(
+        source,
+        layout,
+        page_margin_mpt=0,
+        heading_gap_mpt=0,
+    )
+    return next(iter(regions), None)
+
+
+def reference_only_regions(
+    source: Mapping[str, object],
+    layout: Mapping[str, object],
+    *,
+    page_margin_mpt: int,
+    heading_gap_mpt: int,
+) -> dict[int, tuple[int, int]]:
+    """Return ordered vertical regions containing only a References heading."""
+
+    source_page_list = source["pages"]  # type: ignore[index]
+    source_pages = {int(page["page_number"]): page for page in source_page_list}
+    suffix_headings: dict[int, list[Mapping[str, object]]] = {}
+    for source_page in reversed(source_page_list):
+        blocks = source_page["blocks"]
+        headings = [
+            block
+            for block in blocks
+            if block["translation_policy"] == "required"
+            and block["role"] == "heading"
+            and str(block["text"]).strip().casefold() == "references"
+        ]
+        if not any(
+            block["role"] == "reference-entry"
+            and block["translation_policy"] == "excluded"
+            for block in blocks
+        ) or any(
+            block["translation_policy"] == "required" and block not in headings
+            for block in blocks
+        ):
+            break
+        suffix_headings[int(source_page["page_number"])] = headings
+
+    regions: dict[int, tuple[int, int]] = {}
     for output_page in layout["pages"]:  # type: ignore[index]
-        if output_page["page_kind"] != "native" or output_page["blocks"]:
+        if output_page["page_kind"] != "native":
             continue
         source_page = source_pages.get(int(output_page["source_page_number"]))
         if source_page is None:
             continue
-        blocks = source_page["blocks"]
-        if any(block["translation_policy"] == "required" for block in blocks):
+        headings = suffix_headings.get(int(source_page["page_number"]))
+        if headings is None:
             continue
-        if any(
-            block["role"] == "reference-entry"
-            and block["translation_policy"] == "excluded"
-            for block in blocks
-        ):
-            return int(output_page["page_number"])
-    return None
+        if len(headings) > 1:
+            continue
+
+        output_blocks = output_page["blocks"]
+        if headings:
+            heading_ids = {str(block["id"]) for block in headings}
+            translated_headings = []
+            for block in output_blocks:
+                anchor = block.get("selected_anchor")
+                if (
+                    block["content_kind"] != "unit"
+                    or block["style"]["semantic_role"] != "heading"
+                    or not isinstance(anchor, Mapping)
+                    or anchor.get("source_block_id") not in heading_ids
+                ):
+                    break
+                translated_headings.append(block)
+            else:
+                if {
+                    str(block["selected_anchor"]["source_block_id"])
+                    for block in translated_headings
+                } == heading_ids:
+                    region_top = (
+                        min(int(block["bbox_mpt"][1]) for block in translated_headings)
+                        - heading_gap_mpt
+                    )
+                    if region_top > page_margin_mpt:
+                        regions[int(output_page["page_number"])] = (
+                            page_margin_mpt,
+                            region_top,
+                        )
+            continue
+
+        if not output_blocks:
+            regions[int(output_page["page_number"])] = (
+                page_margin_mpt,
+                A3_LANDSCAPE_HEIGHT_MPT - page_margin_mpt,
+            )
+    return regions
 
 
 def _text_lines(
     manifest: Mapping[str, object],
     *,
     inner_width_mpt: int,
+    dedicated_page: bool = False,
 ) -> list[tuple[str, LineBox, str, int]]:
     layout = manifest["layout"]  # type: ignore[index]
     resolver = FontRunResolver(load_font_registry())
@@ -195,12 +348,34 @@ def _text_lines(
         *entries,
         *(
             (
+                (
+                    "disclaimer-title",
+                    "责任声明",
+                    "heading",
+                    14_000,
+                    21_000,
+                    _BODY_COLOR,
+                ),
+                (
+                    "disclaimer-notice",
+                    "因原末页没有足够的安全空白区域，已追加本声明页；正文与译文未挤压或改动。",
+                    "body",
+                    11_000,
+                    17_000,
+                    _BODY_COLOR,
+                ),
+            )
+            if dedicated_page
+            else ()
+        ),
+        *(
+            (
                 "disclaimer",
                 str(text),
                 "body",
-                int(layout["disclaimer_size_mpt"]),
-                int(layout["disclaimer_line_height_mpt"]),
-                _MUTED_COLOR,
+                11_000 if dedicated_page else int(layout["disclaimer_size_mpt"]),
+                17_000 if dedicated_page else int(layout["disclaimer_line_height_mpt"]),
+                _BODY_COLOR if dedicated_page else _MUTED_COLOR,
             )
             for text in manifest["disclaimer_zh_lines"]
         ),
@@ -232,17 +407,26 @@ def freeze_brand_block(
     start_draw_order: int,
     manifest: Mapping[str, object],
     manifest_sha256: str,
-) -> tuple[dict[str, object], list[dict[str, object]], list[dict[str, object]]]:
+    available_y_mpt: tuple[int, int] | None = None,
+    dedicated_page: bool = False,
+) -> tuple[dict[str, object], list[dict[str, object]], list[dict[str, object]]] | None:
     """Freeze image geometry and vector text for one already selected safe page."""
 
-    layout = manifest["layout"]  # type: ignore[index]
-    card_width = min(int(layout["card_max_width_mpt"]), A4_WIDTH_MPT - 96_000)
-    if card_width < int(layout["card_min_width_mpt"]):
-        raise OverlayPlanError("BRAND_LAYOUT_INVALID", "brand card width is invalid")
-    padding_x = int(layout["card_padding_x_mpt"])
-    padding_y = int(layout["card_padding_y_mpt"])
+    layout = _validated_brand_layout(
+        manifest.get("layout"), code="BRAND_LAYOUT_INVALID"
+    )
+    page_margin = layout["page_margin_mpt"]
+    card_width = (
+        min(600_000, A3_LANDSCAPE_WIDTH_MPT - 2 * page_margin)
+        if dedicated_page
+        else min(layout["card_max_width_mpt"], A4_WIDTH_MPT - 2 * page_margin)
+    )
+    padding_x = layout["card_padding_x_mpt"]
+    padding_y = layout["card_padding_y_mpt"]
     inner_width = card_width - 2 * padding_x
-    lines = _text_lines(manifest, inner_width_mpt=inner_width)
+    lines = _text_lines(
+        manifest, inner_width_mpt=inner_width, dedicated_page=dedicated_page
+    )
     logo_size = int(layout["logo_size_mpt"])
     gap = int(layout["section_gap_mpt"])
     text_height = sum(item[3] for item in lines)
@@ -251,11 +435,24 @@ def freeze_brand_block(
         for left, right in zip(lines, lines[1:], strict=False)
         if left[0] != right[0]
     )
-    card_height = 2 * padding_y + logo_size + transition_gaps + text_height
-    if card_height >= A3_LANDSCAPE_HEIGHT_MPT - 2 * int(layout["page_margin_mpt"]):
+    card_height = 2 * padding_y + logo_size + gap + transition_gaps + text_height
+    full_bottom = page_margin
+    full_top = A3_LANDSCAPE_HEIGHT_MPT - page_margin
+    if card_height >= full_top - full_bottom:
         raise OverlayPlanError("BRAND_LAYOUT_INVALID", "brand card does not fit")
-    left = A4_WIDTH_MPT + (A4_WIDTH_MPT - card_width) // 2
-    bottom = (A3_LANDSCAPE_HEIGHT_MPT - card_height) // 2
+    region_bottom, region_top = (
+        (full_bottom, full_top) if available_y_mpt is None else available_y_mpt
+    )
+    region_bottom = max(region_bottom, full_bottom)
+    region_top = min(region_top, full_top)
+    if card_height > region_top - region_bottom:
+        return None
+    left = (
+        (A3_LANDSCAPE_WIDTH_MPT - card_width) // 2
+        if dedicated_page
+        else A4_WIDTH_MPT + (A4_WIDTH_MPT - card_width) // 2
+    )
+    bottom = region_bottom + (region_top - region_bottom - card_height) // 2
     right = left + card_width
     top = bottom + card_height
     logo_left = left + (card_width - logo_size) // 2
@@ -274,7 +471,15 @@ def freeze_brand_block(
         ascent_mpt = _mpt_ceil(line.ascent_pt)
         baseline = cursor_top - ascent_mpt
         width_mpt = _mpt_ceil(line.width_pt)
-        centered = kind in {"brand", "brand-en", "skill", "github", "disclaimer"}
+        centered = kind in {
+            "brand",
+            "brand-en",
+            "skill",
+            "github",
+            "disclaimer",
+            "disclaimer-title",
+            "disclaimer-notice",
+        }
         line_x = left + padding_x
         if centered:
             line_x = left + (card_width - width_mpt) // 2
@@ -402,6 +607,7 @@ __all__ = [
     "BRAND_MANIFEST_PATH",
     "freeze_brand_block",
     "load_brand_manifest",
+    "reference_only_regions",
     "select_reference_only_page",
     "validate_brand_block",
 ]

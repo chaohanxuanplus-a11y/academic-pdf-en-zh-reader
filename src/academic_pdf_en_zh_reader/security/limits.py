@@ -21,6 +21,7 @@ class WorkerLimits:
     max_result_object_bytes: int = 16 * 1024 * 1024
     max_extraction_artifact_bytes: int = 128 * 1024 * 1024
     max_normalized_pdf_bytes: int = 128 * 1024 * 1024
+    max_output_pdf_bytes: int = 256 * 1024 * 1024
     max_protocol_bytes: int = 64 * 1024
     process_memory_bytes: int = 1024 * 1024 * 1024
     job_memory_bytes: int = 1024 * 1024 * 1024

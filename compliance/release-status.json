@@ -4,31 +4,40 @@
   "blockers": [
     {
       "id": "maintainer_identity_unverified",
-      "resolved": false,
-      "evidence": null
-    },
-    {
-      "id": "coc_primary_channel_unconfigured",
-      "resolved": false,
-      "evidence": null
-    },
-    {
-      "id": "coc_alternate_channel_unconfigured",
-      "resolved": false,
-      "evidence": null
+      "resolved": true,
+      "evidence": {
+        "reference": "compliance/evidence/public/maintainer-identity-20260910.md",
+        "verified_on": "2026-09-10"
+      }
     },
     {
       "id": "security_private_channel_unconfigured",
-      "resolved": false,
-      "evidence": null
+      "resolved": true,
+      "evidence": {
+        "reference": "mailto:chx2391898642@126.com",
+        "verified_on": "2026-09-10",
+        "private": true,
+        "verification_reference": "compliance/evidence/public/private-reporting-channel-20260910.md"
+      }
     },
     {
       "id": "canonical_repository_url_unconfigured",
-      "resolved": false,
-      "evidence": null
+      "resolved": true,
+      "evidence": {
+        "reference": "https://github.com/chaohanxuanplus-a11y/academic-pdf-en-zh-reader",
+        "verified_on": "2026-08-31"
+      }
     },
     {
       "id": "brand_asset_rights_unverified",
+      "resolved": true,
+      "evidence": {
+        "reference": "compliance/evidence/public/brand-use-declaration-20260910.md",
+        "verified_on": "2026-09-10"
+      }
+    },
+    {
+      "id": "windows_lpac_production_path_unverified",
       "resolved": false,
       "evidence": null
     }

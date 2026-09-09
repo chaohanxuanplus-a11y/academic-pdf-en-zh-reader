@@ -34,6 +34,7 @@ COMMON_PATHS = (
     "UPSTREAMS.md",
     "assets",
     "compliance/dependencies.json",
+    "compliance/evidence/public",
     "compliance/external-tools.json",
     "compliance/project-identity.json",
     "compliance/release-status.json",

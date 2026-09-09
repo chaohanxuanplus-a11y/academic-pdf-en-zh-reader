@@ -121,7 +121,7 @@ def test_restricted_test_adapter_refuses_preflight_before_parser_import(
     assert response.status == "error"
     assert response.error == {
         "code": "SANDBOX_CONTRACT_UNVERIFIED",
-        "message": "zero-capability AppContainer token required",
+        "message": "zero-capability less-privileged AppContainer token required",
     }
 
 

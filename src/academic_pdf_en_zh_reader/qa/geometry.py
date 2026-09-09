@@ -10,6 +10,10 @@ from collections.abc import Mapping, Sequence
 
 from pypdf import PdfReader
 
+from academic_pdf_en_zh_reader.qa.page_contract import (
+    source_manifest_pages,
+    source_plan_pages,
+)
 from academic_pdf_en_zh_reader.rendering.page_geometry import (
     A3_LANDSCAPE_HEIGHT_MPT,
     A3_LANDSCAPE_WIDTH_MPT,
@@ -114,7 +118,7 @@ def validate_source_left_one_to_one(
 
     try:
         sources = {int(page["page_number"]): page for page in source["pages"]}  # type: ignore[index]
-        pages = render_manifest["pages"]
+        pages = source_manifest_pages(render_manifest["pages"])
     except (KeyError, TypeError, ValueError) as exc:
         raise GeometryQaError("GEOMETRY_SOURCE_PLACEMENT_INVALID") from exc
     if not isinstance(pages, list) or not pages:
@@ -253,7 +257,10 @@ def validate_bounds_and_overlap(
 
     page_box = (0, 0, A3_LANDSCAPE_WIDTH_MPT, A3_LANDSCAPE_HEIGHT_MPT)
     right_box = (A4_WIDTH_MPT, 0, A3_LANDSCAPE_WIDTH_MPT, A3_LANDSCAPE_HEIGHT_MPT)
-    plan_pages = overlay_plan.get("pages")
+    try:
+        plan_pages = source_plan_pages(layout, overlay_plan)
+    except (KeyError, TypeError, ValueError) as exc:
+        raise GeometryQaError("GEOMETRY_BOUNDS_INVALID") from exc
     layout_pages = layout.get("pages")
     if (
         not isinstance(plan_pages, list)
@@ -348,6 +355,29 @@ def validate_bounds_and_overlap(
             route_box = _box(route["bbox_mpt"], code="GEOMETRY_BOUNDS_INVALID")
             if not _contains(page_box, route_box):
                 raise GeometryQaError("GEOMETRY_BOUNDS_INVALID")
+    if len(overlay_plan["pages"]) > len(plan_pages):
+        page = overlay_plan["pages"][-1]
+        from academic_pdf_en_zh_reader.rendering.branding import load_brand_manifest
+
+        manifest, _asset, _manifest_hash = load_brand_manifest()
+        margin = int(manifest["layout"]["page_margin_mpt"])
+        safe_box = (margin, margin, page_box[2] - margin, page_box[3] - margin)
+        brand_box = _box(
+            page["brand_block"]["bbox_mpt"], code="GEOMETRY_BOUNDS_INVALID"
+        )
+        image_box = _box(
+            page["brand_block"]["image_bbox_mpt"], code="GEOMETRY_BOUNDS_INVALID"
+        )
+        if not _contains(safe_box, brand_box) or not _contains(brand_box, image_box):
+            raise GeometryQaError("GEOMETRY_BOUNDS_INVALID")
+        boxes = [image_box]
+        for run in page["draw_runs"]:
+            run_box = _box(run["bbox_mpt"], code="GEOMETRY_BOUNDS_INVALID")
+            if not _contains(brand_box, run_box):
+                raise GeometryQaError("GEOMETRY_BOUNDS_INVALID")
+            if any(_intersects(run_box, previous) for previous in boxes):
+                raise GeometryQaError("GEOMETRY_OVERLAP_INVALID")
+            boxes.append(run_box)
     return {"block_count": block_count}
 
 
@@ -364,7 +394,11 @@ def validate_leader_policy(
         for band in page["bands"]
     }
     route_count = 0
-    for page, plan_page in zip(layout["pages"], overlay_plan["pages"], strict=True):  # type: ignore[index]
+    try:
+        plan_pages = source_plan_pages(layout, overlay_plan)
+    except (KeyError, TypeError, ValueError) as exc:
+        raise GeometryQaError("GEOMETRY_LEADER_INVALID") from exc
+    for page, plan_page in zip(layout["pages"], plan_pages, strict=True):  # type: ignore[index]
         routes = {str(route["unit_id"]): route for route in plan_page["leader_routes"]}
         expected: set[str] = set()
         for block in page["blocks"]:
@@ -410,7 +444,11 @@ def validate_continuation_and_sizes(
             flow_styles[str(identifier)] = flow["style"]
     header = frame_graph.get("continuation_header")
     continuation_count = 0
-    for page, plan_page in zip(layout["pages"], overlay_plan["pages"], strict=True):  # type: ignore[index]
+    try:
+        plan_pages = source_plan_pages(layout, overlay_plan)
+    except (KeyError, TypeError, ValueError) as exc:
+        raise GeometryQaError("GEOMETRY_CONTINUATION_INVALID") from exc
+    for page, plan_page in zip(layout["pages"], plan_pages, strict=True):  # type: ignore[index]
         continuation = page["page_kind"] == "continuation"
         if continuation != (page["continuation_label"] is not None) or continuation != (
             plan_page["continuation_label"] is not None

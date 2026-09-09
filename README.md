@@ -11,13 +11,27 @@ is laid out on the right.
 ## Current status
 
 The local candidate implementation has passed local acceptance. Public release
-remains blocked until the documented maintainer identity and private reporting
-channels are truthfully configured. The repository contains candidate preflight, extraction,
-topology, Agent-artifact binding, translation/review contracts, annotation,
-layout, rendering, QA, job-state, and delivery components, but their presence is
-not a release claim. See
+remains blocked until the Windows LPAC production path is verified and the final
+release metadata and documents are prepared. The maintainer identity, shared
+private contact, and limited-purpose brand permission have been recorded. The
+`windows_lpac_production_path_unverified` blocker remains
+unresolved; a release candidate must pass the Windows Server 2025 production
+gate with CPython 3.12.10 on the same workflow SHA. The repository contains
+candidate preflight, extraction, topology, Agent-artifact binding,
+translation/review contracts, annotation, layout, rendering, QA, job-state, and
+delivery components, but their presence is not a release claim. See
 [`compliance/release-status.json`](compliance/release-status.json) for the
 machine-readable release blockers.
+
+The personal-project reporting policy was revised on 2026-09-09. One verified
+private route may handle both conduct and security reports; separate addresses
+and an independent alternate contact are not release requirements. A maintainer
+may use a confirmed public name. The maintainer confirmed `chaohanxuan` as the
+public name on 2026-09-10 and supplied the shared private mailbox now listed in
+`SECURITY.md` and `CODE_OF_CONDUCT.md`. Delivery has not been independently tested,
+and independent conduct review or appeal cannot currently be guaranteed. These
+project-specific reporting rules do not replace the security, privacy, dependency,
+copyright, or production LPAC checks.
 
 Before relying on or distributing any generated file, read the project-wide
 [content-rights and accuracy disclaimer](DISCLAIMER.md). Input acquisition,
@@ -44,10 +58,12 @@ The hard product invariants are complete translation, correct reading order,
 mirrored column topology, fixed body font size, no overlap, embedded approved
 fonts, no garbled text, and fail-closed handling of unsupported inputs.
 
-When terminal reference entries leave a safe unused right-side region, the
-output may place one fixed project identity and condensed disclaimer card there.
-That card never replaces required translation, changes annotation budgets, or
-creates an extra page.
+Every successfully delivered PDF contains one fixed project identity, logo, and
+responsibility statement at its end. If the final paper page has terminal
+reference entries and a safe unused right-side region, the card is placed there.
+Otherwise a dedicated final statement page is appended, and the user is notified.
+The statement is never omitted for lack of space, never falls back to an earlier
+page, and never replaces required translation or changes annotation budgets.
 
 ## Local setup
 
@@ -100,7 +116,7 @@ Only the validated final PDF is the ordinary user-facing result. Structured
 stdout, hashes, ledgers, QA reports, the managed job, and Agent JSON are private
 intermediates rather than deliverables.
 
-## Development validation
+## Repository validation
 
 The following commands reproduce the local quality gates used for this
 candidate:
@@ -110,12 +126,13 @@ uv run --frozen pytest -q
 uv run --frozen ruff check .
 uv run --frozen ruff format --check .
 uv run --frozen python scripts/check_dependency_policy.py
-uv run --frozen python scripts/check_release_readiness.py --mode development
+uv run --frozen python scripts/check_release_readiness.py --mode current
 uv run --frozen python scripts/check_github_actions_policy.py
 ```
 
-Passing these checks does not clear the separately recorded public-release
-blockers and is not permission to publish a release.
+The `current` mode validates the development or release-ready rules selected by
+the state declared in `compliance/release-status.json`. Passing these checks is
+not permission to publish a release.
 
 ## Privacy and copyright
 

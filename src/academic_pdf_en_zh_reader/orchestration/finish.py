@@ -50,9 +50,13 @@ from academic_pdf_en_zh_reader.layout.annotation_adapter import (
 from academic_pdf_en_zh_reader.layout.frame_graph import DEFAULT_FRAME_GRAPH_CONFIG
 from academic_pdf_en_zh_reader.layout.solver import DEFAULT_LAYOUT_LIMITS
 from academic_pdf_en_zh_reader.normalization.api import NORMALIZED_PDF_NAME
-from academic_pdf_en_zh_reader.qa.persist import validate_and_persist_qa
-from academic_pdf_en_zh_reader.rendering.compose import compose_bilingual_pdf
+from academic_pdf_en_zh_reader.qa.persist import QaCommitError
+from academic_pdf_en_zh_reader.qa.worker_bridge import validate_qa_in_worker
+from academic_pdf_en_zh_reader.rendering.compose import CompositionError
 from academic_pdf_en_zh_reader.rendering.overlay_plan import build_overlay_plan
+from academic_pdf_en_zh_reader.rendering.worker_bridge import (
+    render_bilingual_pdf_in_worker,
+)
 from academic_pdf_en_zh_reader.review.semantic_checks import (
     check_mechanical_semantics,
 )
@@ -406,7 +410,7 @@ def finish_managed_job(
     output_pdf: str | Path,
     retain_debug: bool = False,
     ttl_seconds: int | None = None,
-) -> dict[str, str]:
+) -> dict[str, object]:
     """Finish exactly one EXTRACTED job, or clean it without publishing a PDF."""
 
     _validate_retention(retain_debug, ttl_seconds)
@@ -648,6 +652,9 @@ def finish_managed_job(
                 finalized.layout,
                 finalized.annotations,
             )
+            disclaimer_page_appended = (
+                overlay_plan["branding"]["appended_page_number"] is not None
+            )
         except Exception as exc:
             raise FinishJobError("OVERLAY_PLAN_FAILED", stage) from exc
 
@@ -655,7 +662,7 @@ def finish_managed_job(
         candidate_path = job_root / "candidate.pdf"
         render_manifest_path = job_root / "render-manifest.json"
         try:
-            composition = compose_bilingual_pdf(
+            composition = render_bilingual_pdf_in_worker(
                 source_pdf_path=normalized_source_path,
                 source=source,
                 units=units,
@@ -677,7 +684,8 @@ def finish_managed_job(
             candidate_code = getattr(exc, "code", None)
             code = (
                 candidate_code
-                if isinstance(candidate_code, str)
+                if isinstance(exc, CompositionError)
+                and isinstance(candidate_code, str)
                 and _STABLE_ERROR_CODE.fullmatch(candidate_code)
                 else "RENDER_FAILED"
             )
@@ -702,7 +710,7 @@ def finish_managed_job(
 
         stage = "qa"
         try:
-            qa = validate_and_persist_qa(
+            qa = validate_qa_in_worker(
                 job_root=job_root,
                 expected_rendered_state_hash=rendered_state_hash,
                 source_pdf_path=normalized_source_path,
@@ -721,7 +729,15 @@ def finish_managed_job(
                 expected_render_manifest_hash=composition.render_manifest_hash,
             )
         except Exception as exc:
-            raise FinishJobError("QA_COMMIT_FAILED", stage) from exc
+            candidate_code = getattr(exc, "code", None)
+            code = (
+                candidate_code
+                if isinstance(exc, QaCommitError)
+                and isinstance(candidate_code, str)
+                and _STABLE_ERROR_CODE.fullmatch(candidate_code)
+                else "QA_COMMIT_FAILED"
+            )
+            raise FinishJobError(code, stage) from exc
         if not qa.passed or qa.code not in {"QA_VALIDATED", "QA_ALREADY_VALIDATED"}:
             raise FinishJobError("QA_FAILED", stage)
         validated_state = _load_job_state(state_path)
@@ -751,7 +767,10 @@ def finish_managed_job(
             or not delivery.delivered
         ):
             raise FinishJobError(delivery.code, stage)
-        return {"status": "ok", "code": "FINISH_OK"}
+        result: dict[str, object] = {"status": "ok", "code": "FINISH_OK"}
+        if disclaimer_page_appended:
+            result["notices"] = ["DISCLAIMER_PAGE_APPENDED"]
+        return result
     except KeyboardInterrupt as exc:
         if job_root is not None and not delivery_handled_cleanup:
             _cleanup_before_delivery(

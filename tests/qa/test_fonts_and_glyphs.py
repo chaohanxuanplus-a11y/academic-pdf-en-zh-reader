@@ -38,11 +38,23 @@ def test_native_source_text_is_allowed_when_page_has_no_planned_draw_runs(
     manifest = deepcopy(composed_qa_fixture["render_manifest"])
     plan = deepcopy(composed_qa_fixture["overlay_plan"])
     for page in plan["pages"]:
-        page["draw_runs"] = []
+        if page["page_kind"] != "disclaimer":
+            page["draw_runs"] = []
     for usage in manifest["font_usages"]:
-        usage["draw_run_count"] = 0
+        usage["draw_run_count"] = sum(
+            run["font_role"] == usage["font_role"]
+            and run["font_name"] == usage["font_name"]
+            and run["size_mpt"] == usage["size_mpt"]
+            for page in plan["pages"]
+            for run in page["draw_runs"]
+        )
 
-    assert validate_draw_run_fonts(reader, manifest, plan) == {"draw_run_count": 0}
+    assert validate_draw_run_fonts(reader, manifest, plan) == {
+        "draw_run_count": sum(len(page["draw_runs"]) for page in plan["pages"])
+    }
+    plan["pages"][-1]["draw_runs"] = []
+    with pytest.raises(FontQaError, match="FONT_DRAW_BINDING_INVALID"):
+        validate_draw_run_fonts(reader, manifest, plan)
 
 
 def test_long_multisubset_text_object_counts_as_one_planned_draw_run() -> None:
@@ -124,3 +136,46 @@ def test_missing_tounicode_is_a_hard_failure(
 
     with pytest.raises(FontQaError, match="FONT_EMBEDDING_INVALID"):
         validate_embedded_fonts(tampered, composed_qa_fixture["render_manifest"])
+
+
+@pytest.mark.parametrize("shown_text", ("责任声明", "替换声明"))
+def test_inline_brand_responsibility_text_must_match_the_frozen_suffix(
+    shown_text: str,
+) -> None:
+    registry = load_font_registry()
+    body = registry.face("body")
+    output = BytesIO()
+    canvas = Canvas(output, invariant=1)
+    canvas.drawString(10, 700, "Source text before overlay")
+    canvas.setFont(body.reportlab_name, 11)
+    canvas.drawString(10, 600, shown_text)
+    canvas.save()
+    reader = PdfReader(BytesIO(output.getvalue()), strict=True)
+    manifest = {
+        "font_fingerprint": [
+            {"role": face.role, "reportlab_name": face.reportlab_name}
+            for face in registry.faces
+        ],
+        "font_usages": [{"draw_run_count": 1}],
+    }
+    plan = {
+        "pages": [
+            {
+                "page_kind": "native",
+                "brand_block": {},
+                "draw_runs": [
+                    {
+                        "font_role": "body",
+                        "size_mpt": 11000,
+                        "content_kind": "brand",
+                        "text": "责任声明",
+                    }
+                ],
+            }
+        ]
+    }
+    if shown_text == "责任声明":
+        assert validate_draw_run_fonts(reader, manifest, plan) == {"draw_run_count": 1}
+    else:
+        with pytest.raises(FontQaError, match="FONT_DRAW_BINDING_INVALID"):
+            validate_draw_run_fonts(reader, manifest, plan)

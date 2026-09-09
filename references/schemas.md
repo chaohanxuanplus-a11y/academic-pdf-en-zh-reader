@@ -34,6 +34,13 @@ profile, as specified by the producing stage.
    `qa.json`, and `provenance.json` freeze selected reading aids, layout decisions,
    rendering inputs, hard-gate evidence, and reproducibility identity.
 
+When the final paper page has no safe statement space, rendering adds exactly one
+final page with `page_kind: "disclaimer"`. Its source page number and source
+geometry fields are null; it has no translation fragments or block mappings.
+This page is absent from the immutable source and layout artifacts. Native and
+continuation pages retain their existing source bindings. Parent-side QA checks
+the added page against the overlay plan and the required statement content.
+
 ## Offset convention
 
 Text offsets are zero-based, half-open indexes over Python Unicode code points after

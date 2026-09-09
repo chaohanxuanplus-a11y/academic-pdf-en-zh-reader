@@ -510,7 +510,10 @@ def _validate_frozen_page(page_plan: Mapping[str, object]) -> None:
         raise OverlayPlanError("PLAN_TAMPERED", "page plan lists are invalid")
     raw_label = page_plan["continuation_label"]
     brand_block = validate_brand_block(page_plan["brand_block"])
-    if brand_block is not None and page_plan["page_kind"] != "native":
+    if brand_block is not None and page_plan["page_kind"] not in {
+        "native",
+        "disclaimer",
+    }:
         raise OverlayPlanError("PLAN_TAMPERED", "brand block page kind is invalid")
     if page_plan["page_kind"] == "native":
         if raw_label is not None or page_plan["continuation_index"] != 0:
@@ -535,6 +538,29 @@ def _validate_frozen_page(page_plan: Mapping[str, object]) -> None:
             raise OverlayPlanError(
                 "PLAN_TAMPERED",
                 "continuation label page binding is invalid",
+            )
+    elif page_plan["page_kind"] == "disclaimer":
+        if (
+            page_plan["source_page_number"] is not None
+            or raw_label is not None
+            or page_plan["continuation_index"] != 0
+            or brand_block is None
+            or page_plan["source_obstacle_count"] != 0
+            or page_plan["source_obstacles_hash"] != sha256_canonical([])
+            or underlines
+            or leader_routes
+            or any(
+                not isinstance(run, Mapping) or run.get("content_kind") != "brand"
+                for run in draw_runs
+            )
+            or any(
+                not isinstance(binding, Mapping)
+                or binding.get("content_kind") != "brand"
+                for binding in line_bindings
+            )
+        ):
+            raise OverlayPlanError(
+                "PLAN_TAMPERED", "disclaimer page binding is invalid"
             )
     else:
         raise OverlayPlanError("PLAN_TAMPERED", "page kind is invalid")

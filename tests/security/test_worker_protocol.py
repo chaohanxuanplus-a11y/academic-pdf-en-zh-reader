@@ -37,6 +37,55 @@ def test_versioned_request_and_response_round_trip() -> None:
 
 
 @pytest.mark.parametrize(
+    ("operation", "parameters"),
+    (
+        (
+            "render",
+            {
+                "policy_version": "1.0.0",
+                "input_bytes": 1024,
+                "normalized_pdf_sha256": "a" * 64,
+                "handoff_bytes": 2048,
+                "handoff_sha256": "b" * 64,
+            },
+        ),
+        (
+            "qa",
+            {
+                "policy_version": "1.0.0",
+                "input_bytes": 1024,
+                "normalized_pdf_sha256": "a" * 64,
+                "candidate_bytes": 4096,
+                "candidate_pdf_sha256": "b" * 64,
+                "handoff_bytes": 2048,
+                "handoff_sha256": "c" * 64,
+            },
+        ),
+    ),
+)
+def test_render_and_qa_requests_have_fixed_bounded_handoff_schemas(
+    operation: str,
+    parameters: dict[str, object],
+) -> None:
+    limits = WorkerLimits(max_protocol_bytes=4096)
+    request = WorkerRequest(
+        operation=operation,
+        input_path="input.pdf",
+        parameters=parameters,
+    )
+
+    assert decode_request(encode_request(request, limits), limits) == request
+
+    unexpected = WorkerRequest(
+        operation=operation,
+        input_path="input.pdf",
+        parameters={**parameters, "caller_selected_path": "outside.json"},
+    )
+    with pytest.raises(ProtocolError, match="schema"):
+        encode_request(unexpected, limits)
+
+
+@pytest.mark.parametrize(
     "payload, message",
     [
         (b"not-json", "JSON"),
@@ -51,6 +100,42 @@ def test_versioned_request_and_response_round_trip() -> None:
 def test_request_rejects_non_schema_data(payload: bytes, message: str) -> None:
     with pytest.raises(ProtocolError, match=message):
         decode_request(payload, WorkerLimits(max_protocol_bytes=4096))
+
+
+@pytest.mark.parametrize("invalid_version", [True, 1.0])
+def test_protocol_version_requires_an_exact_integer_type(
+    invalid_version: object,
+) -> None:
+    limits = WorkerLimits(max_protocol_bytes=4096)
+    request = WorkerRequest(
+        operation="probe",
+        input_path="input.pdf",
+        parameters={"case": "inspect"},
+        version=invalid_version,  # type: ignore[arg-type]
+    )
+    response = WorkerResponse(
+        status="ok",
+        result={},
+        error=None,
+        version=invalid_version,  # type: ignore[arg-type]
+    )
+    encoded_version = b"true" if invalid_version is True else b"1.0"
+    raw_request = (
+        b'{"input_path":"input.pdf","operation":"probe","parameters":'
+        b'{"case":"inspect"},"version":' + encoded_version + b"}"
+    )
+    raw_response = (
+        b'{"error":null,"result":{},"status":"ok","version":' + encoded_version + b"}"
+    )
+
+    with pytest.raises(ProtocolError, match="version"):
+        encode_request(request, limits)
+    with pytest.raises(ProtocolError, match="version"):
+        decode_request(raw_request, limits)
+    with pytest.raises(ProtocolError, match="version"):
+        encode_response(response, limits)
+    with pytest.raises(ProtocolError, match="version"):
+        decode_response(raw_response, limits)
 
 
 def test_protocol_rejects_oversized_json() -> None:

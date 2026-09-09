@@ -28,6 +28,10 @@ from academic_pdf_en_zh_reader.qa.geometry import (
     validate_mirrored_frames,
     validate_source_left_one_to_one,
 )
+from academic_pdf_en_zh_reader.qa.page_contract import (
+    source_manifest_pages,
+    source_plan_pages,
+)
 from academic_pdf_en_zh_reader.qa.pdf_structure import (
     validate_no_active_content,
     validate_no_new_page_rasters,
@@ -243,12 +247,20 @@ def _validate_parent_chain(
     try:
         manifest_pages = render_manifest["pages"]
         plan_pages = expected_plan["pages"]
+        source_plan_pages(artifacts["layout"], expected_plan)
+        source_manifest_pages(manifest_pages)
         if len(manifest_pages) != len(plan_pages) or any(
             manifest_page["overlay_page_plan_hash"] != plan_page["page_plan_hash"]
+            or manifest_page["output_page_number"] != plan_page["page_number"]
+            or manifest_page["source_page_number"] != plan_page["source_page_number"]
+            or manifest_page["page_kind"] != plan_page["page_kind"]
+            or manifest_page["continuation_index"] != plan_page["continuation_index"]
+            or manifest_page["continuation_label_present"]
+            != (plan_page["continuation_label"] is not None)
             for manifest_page, plan_page in zip(manifest_pages, plan_pages, strict=True)
         ):
             raise QaParentError("PARENT_PLAN_MISMATCH")
-    except (KeyError, TypeError) as exc:
+    except (KeyError, TypeError, ValueError) as exc:
         raise QaParentError("PARENT_PLAN_MISMATCH") from exc
 
 

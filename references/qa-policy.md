@@ -49,3 +49,14 @@ not a quality report and does not replace the translated text.
 Layout may start only after exact unit coverage, bounded spans, mechanical semantic
 checks, translation-hash binding, independent identities, and review status all
 pass. Failed or incomplete review produces no candidate final PDF.
+
+## Responsibility statement in the delivered PDF
+
+Every successful PDF includes the fixed project responsibility statement exactly
+once at its end. If no safe region exists on the final paper page, append one
+dedicated final statement page rather than omit the statement or move paper text.
+The appended page is project-authored, has no source-paper page mapping, and does
+not change translation coverage or annotation budgets. Validate its text, fonts,
+page geometry, lack of overlap, and final position alongside the ordinary PDF
+checks. Missing, duplicate, or malformed statement content fails delivery; only
+a successfully validated and delivered appended page produces the user notice.

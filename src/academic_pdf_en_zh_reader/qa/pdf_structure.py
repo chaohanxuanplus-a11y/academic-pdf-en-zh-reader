@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+from collections import Counter
 from collections.abc import Mapping
 
 from pypdf import PdfReader
@@ -23,6 +24,7 @@ from academic_pdf_en_zh_reader.qa.image_fingerprints import (
     ImageFingerprintError,
     page_image_fingerprints,
 )
+from academic_pdf_en_zh_reader.qa.page_contract import source_manifest_pages
 
 _CATALOG_LIMITS = CatalogLimits(
     max_objects=50_000,
@@ -142,6 +144,7 @@ def validate_no_new_page_rasters(
         mappings = render_manifest["pages"]
         if not isinstance(mappings, list) or len(mappings) != len(output_reader.pages):
             raise PdfStructureQaError("PDF_RASTER_SUBSTITUTION")
+        source_backed = source_manifest_pages(mappings)
         source_images = [page_image_fingerprints(page) for page in source_reader.pages]
         output_image_count = 0
         for output_page_number, (output_page, mapping) in enumerate(
@@ -150,15 +153,18 @@ def validate_no_new_page_rasters(
         ):
             if not isinstance(mapping, Mapping) or (
                 mapping.get("output_page_number") != output_page_number
-                or isinstance(mapping.get("source_page_number"), bool)
-                or not isinstance(mapping.get("source_page_number"), int)
             ):
                 raise PdfStructureQaError("PDF_RASTER_SUBSTITUTION")
-            source_index = mapping["source_page_number"] - 1
-            if not 0 <= source_index < len(source_images):
-                raise PdfStructureQaError("PDF_RASTER_SUBSTITUTION")
+            if output_page_number > len(source_backed):
+                expected_images = Counter()
+            else:
+                if type(mapping.get("source_page_number")) is not int:
+                    raise PdfStructureQaError("PDF_RASTER_SUBSTITUTION")
+                source_index = mapping["source_page_number"] - 1
+                if not 0 <= source_index < len(source_images):
+                    raise PdfStructureQaError("PDF_RASTER_SUBSTITUTION")
+                expected_images = source_images[source_index].copy()
             declared = _declared_overlay_fingerprints(mapping)
-            expected_images = source_images[source_index].copy()
             expected_images.update(declared)
             output_images = page_image_fingerprints(output_page)
             if output_images != expected_images:

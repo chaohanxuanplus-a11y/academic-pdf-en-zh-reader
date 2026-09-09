@@ -174,7 +174,9 @@ def validate_draw_run_fonts(
     if set(manifest_names) != {"body", "heading", "symbols"}:
         raise FontQaError("FONT_DRAW_BINDING_INVALID")
     total = 0
-    for page, planned in zip(reader.pages, planned_pages, strict=True):
+    for page, planned, plan_page in zip(
+        reader.pages, planned_pages, overlay_plan["pages"], strict=True
+    ):
         resources = _font_dictionary(page)
         roles_by_resource: dict[str, str] = {}
         for name, reference in resources.items():
@@ -243,6 +245,32 @@ def validate_draw_run_fonts(
             )
         # Source content can legitimately use the same public font. Composition
         # appends the frozen overlay, so the exact overlay sequence is the suffix.
+        if plan_page.get("page_kind") == "disclaimer":
+            expected_text = "".join(str(run["text"]) for run in plan_page["draw_runs"])
+            try:
+                actual_text = page.extract_text()
+            except Exception as exc:
+                raise FontQaError("FONT_DRAW_BINDING_INVALID") from exc
+            if (
+                observed != planned
+                or not expected_text
+                or "".join(actual_text.split()) != "".join(expected_text.split())
+            ):
+                raise FontQaError("FONT_DRAW_BINDING_INVALID")
+        elif plan_page.get("brand_block") is not None:
+            expected_brand = "".join(
+                str(run["text"])
+                for run in plan_page["draw_runs"]
+                if run["content_kind"] == "brand"
+            )
+            try:
+                actual_text = page.extract_text()
+            except Exception as exc:
+                raise FontQaError("FONT_DRAW_BINDING_INVALID") from exc
+            if not expected_brand or not "".join(actual_text.split()).endswith(
+                "".join(expected_brand.split())
+            ):
+                raise FontQaError("FONT_DRAW_BINDING_INVALID")
         if planned and (
             len(observed) < len(planned) or observed[-len(planned) :] != planned
         ):

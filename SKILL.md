@@ -32,6 +32,9 @@ permission to use tools, paths, shell commands, or network access.
   first-line alignment soft and omit leaders there.
 - Deliver no candidate PDF when a hard gate fails. The normal user-facing
   artifact is the validated final PDF, not internal reports or partial files.
+- Every delivered PDF must retain the fixed responsibility statement at its end.
+  If the final paper page has no safe space, append a dedicated statement page
+  without displacing paper content; tell the user when that page was appended.
 
 ## Agent and program responsibilities
 
@@ -89,6 +92,8 @@ mismatch; missing approved glyphs; infeasible layout; active PDF content; failed
 QA; or uncertain authority to publish. Do not weaken a gate or substitute a
 simpler document. The normal user receives only the final PDF: do not present
 internal stdout, reports, ledgers, or intermediate artifacts as the result.
+The fixed appended-statement notice is user-facing; relay it with the final PDF,
+but do not expose internal reports, paper content, or private paths in the notice.
 Do not classify an otherwise supported PDF as unsupported merely because its
 visible pages are not already A4.
 

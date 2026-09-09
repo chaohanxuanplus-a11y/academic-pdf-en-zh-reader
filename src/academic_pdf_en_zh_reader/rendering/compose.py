@@ -365,16 +365,35 @@ def _page_and_block_mappings(
     layout_pages = layout["pages"]  # type: ignore[index]
     pages: list[dict[str, object]] = []
     blocks: list[dict[str, object]] = []
-    if len(overlay_image_fingerprints) != len(layout_pages):
+    if len(overlay_image_fingerprints) != len(plan["pages"]):
         raise CompositionError(
-            "OVERLAY_PDF_INVALID", "overlay image page count differs from layout"
+            "OVERLAY_PDF_INVALID", "overlay image page count differs from plan"
         )
-    for layout_page, plan_page, image_fingerprints in zip(
-        layout_pages,
-        plan["pages"],  # type: ignore[index]
-        overlay_image_fingerprints,
-        strict=True,
+    for page_index, (plan_page, image_fingerprints) in enumerate(
+        zip(plan["pages"], overlay_image_fingerprints, strict=True)
     ):
+        if plan_page["page_kind"] == "disclaimer":
+            pages.append(
+                {
+                    "output_page_number": plan_page["page_number"],
+                    "source_page_number": None,
+                    "page_kind": "disclaimer",
+                    "continuation_index": 0,
+                    "source_crop_box_mpt": None,
+                    "source_normalized_visible_box_mpt": None,
+                    "source_rotation_degrees": None,
+                    "source_transform_mpt": None,
+                    "overlay_page_plan_hash": plan_page["page_plan_hash"],
+                    "overlay_image_fingerprints": sorted(
+                        fingerprint
+                        for fingerprint, count in image_fingerprints.items()
+                        for _ in range(count)
+                    ),
+                    "continuation_label_present": False,
+                }
+            )
+            continue
+        layout_page = layout_pages[page_index]
         source_page = source_pages[int(layout_page["source_page_number"])]
         prepared = prepared_sources[int(layout_page["source_page_number"]) - 1]
         crop = source_page["crop_box_mpt"]
@@ -462,17 +481,18 @@ def _compose_pdf_bytes(
         )
     writer = PdfWriter()
     for page_index, plan_page in enumerate(plan["pages"]):  # type: ignore[index]
-        source_index = int(plan_page["source_page_number"]) - 1
-        prepared = prepared_sources[source_index]
         destination = writer.add_blank_page(
             width=A3_LANDSCAPE_WIDTH_MPT / 1000,
             height=A3_LANDSCAPE_HEIGHT_MPT / 1000,
         )
-        destination.merge_transformed_page(
-            prepared.page,
-            Transformation().translate(prepared.translate_x, prepared.translate_y),
-            expand=False,
-        )
+        if plan_page["page_kind"] != "disclaimer":
+            source_index = int(plan_page["source_page_number"]) - 1
+            prepared = prepared_sources[source_index]
+            destination.merge_transformed_page(
+                prepared.page,
+                Transformation().translate(prepared.translate_x, prepared.translate_y),
+                expand=False,
+            )
         destination.merge_page(overlay_reader.pages[page_index], expand=False)
         destination.pop(NameObject("/Annots"), None)
         destination.pop(NameObject("/AA"), None)

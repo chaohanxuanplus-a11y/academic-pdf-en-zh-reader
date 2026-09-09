@@ -4,36 +4,43 @@
 # Third-Party Notices
 
 No third-party code, PDF, or Python wheel is currently redistributed in this
-repository. One user-supplied candidate branding image is retained only for local
-development while its public-release rights remain unverified. The following
-three font binaries are redistributed so that rendering never depends on a
-user's system fonts.
+repository. One publisher-designed branding image is provided under a separate
+limited-purpose permission. The following three font binaries are redistributed
+so that rendering never depends on a user's system fonts.
 
-## Hanhai Wencai candidate brand asset
+## Hanhai Wencai limited-purpose brand asset
 
 File: `assets/branding/hanhai-wencai.png`
 
-The user supplied this image for local candidate development. Its SHA-256 is
+The publisher declares this image to be self-designed. Its SHA-256 is
 `1bb1dad5b83bd3b98060e513f3298bb0ace2bf4669590f60c6a3fbbdfb4ba0ab`
 and its size is 1,471,096 bytes.
 
-Copyright and redistribution status: the SPDX copyright field records
-`NOASSERTION` because ownership has not been independently verified. Public
-redistribution authority has not been established, so this repository does not
-authorize public redistribution of the asset. The temporary identifier
-`LicenseRef-HanhaiWencai-Unreleased` records that unresolved status; it does not
-grant public redistribution rights.
+Copyright 2026 chaohanxuan. The rights record is based on the publisher's direct
+self-design and limited-use declaration dated 2026-09-10, not an independent
+copyright or trademark-registration search.
 
-Trademark status: ownership, registration status, and authorization to use the
-name or image publicly as a trademark have not been independently verified. No
-public trademark-use permission is claimed.
+License: `LicenseRef-HanhaiWencai-SkillOutputOnly`. The image may accompany this
+project's public repository or Skill distribution only so that the Skill can
+place the brand mark at the end of a processed output file. The implementation
+limits this to one safe placement on the final output page; if the paper's final
+page has no safe space, the publisher's 2026-09-10 follow-up authorizes appending
+a final responsibility-statement page and notifying the user, without displacing
+paper content. The brand remains confined to that final statement placement.
+This permission does not authorize independent reuse, promotion, use in other
+projects, or placement elsewhere in the output.
 
-See `LICENSES/LicenseRef-HanhaiWencai-Unreleased.txt` and
-the separate `asset.copyright` and `asset.trademark` evidence records in
-`compliance/project-identity.json`. The brand asset is not admitted to a public
-release until both evidence records are verified, public redistribution and
-public trademark-use permissions are established, the dedicated release blocker
-is resolved, and these notices are updated.
+Permission to display the accompanying brand name and logo is limited to that
+same purpose. No trademark registration or broader trademark permission is
+claimed. The asset permission does not change the Apache-2.0 license for project
+code and documentation, or grant rights in user papers and other third-party
+content.
+
+See `LICENSES/LicenseRef-HanhaiWencai-SkillOutputOnly.txt`,
+`compliance/evidence/public/brand-use-declaration-20260910.md`, and the separate
+`asset.copyright` and `asset.trademark` records in `compliance/project-identity.json`.
+Resolution of this rights record does not clear the production safety gate or
+authorize a release operation.
 
 ## Contributor Covenant 3.0
 

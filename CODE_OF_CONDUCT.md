@@ -75,24 +75,35 @@ best to collaborate. Not every conflict represents a code of conduct violation,
 and this Code of Conduct reinforces encouraged behaviors and norms that can help
 avoid conflicts and minimize harm.
 
-Private primary and independent alternate reporting channels have not yet been
-configured. This repository is therefore not ready for public participation or
-release. Before publication, this section must be replaced with verified private
-channels and the corresponding evidence must pass the release readiness check.
-Public issues are not an acceptable substitute.
+Report conduct or security concerns privately to the maintainer, `chaohanxuan`,
+at [chx2391898642@126.com](mailto:chx2391898642@126.com). This is the
+maintainer-supplied contact address recorded on 2026-09-10; no test email has
+been sent and delivery has not been independently tested. The address may be
+public, but submitted reports and reporter details must remain private. Public
+issues are not an acceptable substitute. Other release gates remain unresolved,
+so the repository is still not ready for public participation or release.
 
-Community Moderators take reports of violations seriously and will make every
-effort to respond in a timely manner. They will investigate reports while
-prioritizing safety, confidentiality, fair process, and moderator recusal when a
-moderator is involved. Enforcement actions are carried out privately with the
-involved parties, although communication to the community may be part of a
-mutually agreed resolution.
+Under the personal-project policy revised on 2026-09-09, one route may handle
+both conduct and security reports if it supports both purposes. Separate
+addresses or an independent alternate contact are not required. No independent
+moderator is recorded in this repository, so independent review or appeal
+cannot currently be guaranteed, including when a report concerns the
+maintainer. Any future independent contact must agree to that role before
+being listed.
+
+The personal maintainer handles reports on a best-effort basis without a fixed
+response-time guarantee. The maintainer or any designated moderator should
+handle reports with care for safety, confidentiality, and fair process. A moderator
+involved in a report should recuse from its review; if no independent reviewer
+is available, that limitation must be disclosed rather than promising an
+independent decision. Enforcement actions should be communicated privately to
+the involved parties; any wider disclosure requires care for confidentiality.
 
 ## Addressing and Repairing Harm
 
-If an investigation by the Community Moderators finds that this Code of Conduct
-has been violated, the following enforcement ladder may be used based on the
-incident's impact. Lower rungs may be skipped when severity requires it.
+If a review by the maintainer or a designated moderator finds that this Code of
+Conduct has been violated, the following enforcement ladder may be used based
+on the incident's impact. Lower rungs may be skipped when severity requires it.
 
 1. **Warning**
    - Event: A violation involving a single incident or series of incidents.
@@ -114,8 +125,9 @@ incident's impact. Lower rungs may be skipped when severity requires it.
    - Consequence: Removal of access to community spaces and channels.
    - Repair: No repair is possible at this level.
 
-This ladder is a guideline and does not remove the Community Moderators'
-responsibility to exercise fair judgment in the community's best interests.
+This ladder is a guideline and does not remove the responsible maintainer's or
+moderator's responsibility to exercise fair judgment in the community's best
+interests.
 
 ## Scope
 
@@ -132,5 +144,6 @@ Contributor Covenant is stewarded by the Organization for Ethical Source and
 licensed under CC BY-SA 4.0. A copy of the license is available at
 <https://creativecommons.org/licenses/by-sa/4.0/>.
 
-Project modifications clarify the unreleased reporting status, moderator
-recusal, and formatting while preserving the substance of version 3.0.
+Project modifications clarify the unreleased status, the 2026-09-09
+personal-project reporting policy, and limits on independent review while
+preserving the behavioral expectations of version 3.0.

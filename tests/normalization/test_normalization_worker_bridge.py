@@ -236,7 +236,7 @@ def test_restricted_adapter_refuses_normalization_before_core_import(
     assert response.status == "error"
     assert response.error == {
         "code": "SANDBOX_CONTRACT_UNVERIFIED",
-        "message": "zero-capability AppContainer token required",
+        "message": "zero-capability less-privileged AppContainer token required",
     }
 
 

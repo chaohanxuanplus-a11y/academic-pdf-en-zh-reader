@@ -154,10 +154,10 @@ def test_qa_only_partial_commit_is_idempotently_resumed(
     passed_qa = run_mechanical_qa(**composed_qa_fixture)
     real_commit = persist_module._write_or_verify_same
 
-    def fail_provenance(path, value, schema_name, *, root):
+    def fail_provenance(path, value, schema_name, **kwargs):
         if schema_name == "provenance":
             raise QaCommitError("INJECTED_PROVENANCE_FAILURE")
-        return real_commit(path, value, schema_name, root=root)
+        return real_commit(path, value, schema_name, **kwargs)
 
     monkeypatch.setattr(persist_module, "_write_or_verify_same", fail_provenance)
     with pytest.raises(QaCommitError, match="INJECTED_PROVENANCE_FAILURE"):
@@ -238,6 +238,31 @@ def test_failed_qa_writes_no_passed_artifacts_and_does_not_advance(
     assert load_job_state(job_root / "job-state.json").stage is JobStage.RENDERED
 
 
+def test_top_level_passed_cannot_override_a_failed_hard_gate(
+    composed_qa_fixture: dict[str, object], monkeypatch
+) -> None:
+    job_root, rendered_hash = _install_rendered_state(composed_qa_fixture)
+    inconsistent = deepcopy(run_mechanical_qa(**composed_qa_fixture))
+    inconsistent["checks"][-1]["passed"] = False
+    inconsistent["checks"][-1]["details"] = "RASTER_PAGE_SANITY_FAILED"
+    assert inconsistent["passed"] is True
+    monkeypatch.setattr(
+        persist_module,
+        "run_mechanical_qa",
+        lambda **_kwargs: inconsistent,
+    )
+
+    with pytest.raises(QaCommitError, match="QA_ARTIFACT_INVALID"):
+        validate_and_persist_qa(
+            job_root=job_root,
+            expected_rendered_state_hash=rendered_hash,
+            **composed_qa_fixture,
+        )
+
+    assert not (job_root / "qa.json").exists()
+    assert load_job_state(job_root / "job-state.json").stage is JobStage.RENDERED
+
+
 def test_rendered_ledger_pdf_binding_is_checked_before_qa(
     composed_qa_fixture: dict[str, object], monkeypatch
 ) -> None:
@@ -282,3 +307,61 @@ def test_normalized_pdf_ledger_binding_is_checked_before_qa(
             **composed_qa_fixture,
         )
     assert called is False
+
+
+@pytest.mark.parametrize(
+    ("field", "replacement"),
+    (
+        ("finalization_receipt_hash", "f" * 64),
+        ("qa_config_hash", "f" * 64),
+        ("checked_page_count", 2),
+    ),
+)
+def test_worker_qa_must_bind_receipt_config_and_page_count(
+    composed_qa_fixture: dict[str, object],
+    monkeypatch,
+    field: str,
+    replacement: object,
+) -> None:
+    job_root, rendered_hash = _install_rendered_state(composed_qa_fixture)
+    worker_qa = deepcopy(run_mechanical_qa(**composed_qa_fixture))
+    if field == "checked_page_count":
+        replacement = worker_qa[field] + 1
+    assert worker_qa[field] != replacement
+    worker_qa[field] = replacement
+    validate_artifact("qa", worker_qa)
+    monkeypatch.setattr(
+        persist_module,
+        "run_mechanical_qa",
+        lambda **_kwargs: worker_qa,
+    )
+
+    with pytest.raises(QaCommitError, match="QA_ARTIFACT_BINDING_MISMATCH"):
+        validate_and_persist_qa(
+            job_root=job_root,
+            expected_rendered_state_hash=rendered_hash,
+            **composed_qa_fixture,
+        )
+    assert not (job_root / "qa.json").exists()
+    assert load_job_state(job_root / "job-state.json").stage is JobStage.RENDERED
+
+
+def test_invalid_worker_qa_has_a_stable_error_code(
+    composed_qa_fixture: dict[str, object], monkeypatch
+) -> None:
+    job_root, rendered_hash = _install_rendered_state(composed_qa_fixture)
+    monkeypatch.setattr(
+        persist_module,
+        "run_mechanical_qa",
+        lambda **_kwargs: {},
+    )
+
+    with pytest.raises(QaCommitError) as captured:
+        validate_and_persist_qa(
+            job_root=job_root,
+            expected_rendered_state_hash=rendered_hash,
+            **composed_qa_fixture,
+        )
+
+    assert captured.value.code == "QA_ARTIFACT_INVALID"
+    assert not (job_root / "qa.json").exists()

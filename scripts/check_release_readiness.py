@@ -5,32 +5,85 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import ipaddress
 import json
+import os
 import re
+import subprocess
 import tomllib
 from collections.abc import Mapping
 from dataclasses import dataclass
-from pathlib import Path
+from datetime import date, datetime, timedelta, timezone
+from pathlib import Path, PurePosixPath
 from typing import Literal
 from urllib.parse import urlsplit
 
-Mode = Literal["development", "release"]
+Mode = Literal["current", "development", "release"]
 
 REQUIRED_BLOCKERS = {
     "brand_asset_rights_unverified",
     "canonical_repository_url_unconfigured",
     "maintainer_identity_unverified",
-    "coc_primary_channel_unconfigured",
-    "coc_alternate_channel_unconfigured",
     "security_private_channel_unconfigured",
+    "windows_lpac_production_path_unverified",
 }
 PRIVATE_CHANNEL_BLOCKERS = {
-    "coc_primary_channel_unconfigured",
-    "coc_alternate_channel_unconfigured",
     "security_private_channel_unconfigured",
+}
+WINDOWS_LPAC_BLOCKER = "windows_lpac_production_path_unverified"
+WINDOWS_LPAC_JOB = "windows-2025-production-gate"
+RELEASE_WORKFLOW_PATH = ".github/workflows/release.yml"
+LIVE_GATE_RESULT_VARIABLE = "RELEASE_LPAC_GATE_RESULT"
+LIVE_GATE_PROBE_VARIABLE = "RELEASE_LPAC_PROBE_OUTCOME"
+LIVE_GATE_FINISH_VARIABLE = "RELEASE_LPAC_FINISH_OUTCOME"
+LIVE_GATE_HEAD_VARIABLE = "RELEASE_LPAC_TESTED_HEAD_SHA"
+LIVE_GATE_SCHEMA_VARIABLE = "RELEASE_LPAC_SIGNAL_SCHEMA"
+LIVE_GATE_RUN_ID_VARIABLE = "RELEASE_LPAC_RUN_ID"
+LIVE_GATE_RUN_ATTEMPT_VARIABLE = "RELEASE_LPAC_RUN_ATTEMPT"
+WINDOWS_LPAC_EVIDENCE_FIELDS = {
+    "conclusion",
+    "head_sha",
+    "job",
+    "run_url",
+    "verified_on",
+    "workflow",
 }
 PENDING_BRAND_LICENSE = "LicenseRef-HanhaiWencai-Unreleased"
 DEVELOPMENT_REPOSITORY_DISPLAY = "GitHub：公开发布后提供"
+PUBLIC_EVIDENCE_DIRECTORY = PurePosixPath("compliance/evidence/public")
+MAX_PUBLIC_EVIDENCE_BYTES = 128 * 1024
+SHANGHAI_TIMEZONE = timezone(timedelta(hours=8))
+STANDARD_BRAND_LICENSES = {
+    "Apache-2.0",
+    "CC-BY-4.0",
+    "CC-BY-SA-4.0",
+    "CC0-1.0",
+}
+SPECIAL_USE_HOST_SUFFIXES = (
+    ".alt",
+    ".arpa",
+    ".example",
+    ".home.arpa",
+    ".internal",
+    ".invalid",
+    ".local",
+    ".localhost",
+    ".onion",
+    ".test",
+)
+PLACEHOLDER_TOKENS = (
+    "<",
+    ">",
+    "changeme",
+    "example",
+    "placeholder",
+    "replace-me",
+    "replace_me",
+    "tbd",
+    "todo",
+    "verified-record",
+    "verified_record",
+)
 UNRELEASED_DOCUMENT_MARKERS = {
     "README.md": ("public release remains blocked",),
     "PRIVACY.md": (
@@ -44,7 +97,12 @@ UNRELEASED_DOCUMENT_MARKERS = {
     "CONTRIBUTING.md": ("not ready to accept public contributions",),
     "CODE_OF_CONDUCT.md": (
         "have not yet been configured",
+        "has not yet been configured",
         "not ready for public participation or release",
+    ),
+    "references/runbook.md": (
+        "not a public production release",
+        "public release remains blocked",
     ),
 }
 REQUIRED_DISCLAIMER_LINKS = {
@@ -69,29 +127,51 @@ def _sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
-def _is_canonical_github_url(value: object) -> bool:
+def _contains_placeholder(value: str) -> bool:
+    folded = value.casefold()
+    return any(token in folded for token in PLACEHOLDER_TOKENS)
+
+
+def _normalize_github_repository_url(value: object) -> str | None:
     if not isinstance(value, str) or not value.strip() or value != value.strip():
-        return False
-    try:
-        parsed = urlsplit(value)
-    except ValueError:
-        return False
-    if (
-        parsed.scheme != "https"
-        or parsed.hostname != "github.com"
-        or parsed.username is not None
-        or parsed.password is not None
-        or parsed.port is not None
-        or parsed.query
-        or parsed.fragment
-    ):
-        return False
-    parts = [part for part in parsed.path.split("/") if part]
-    if len(parts) != 2 or parsed.path.endswith("/"):
-        return False
-    placeholders = {
-        "<owner>",
-        "<repo>",
+        return None
+    if _contains_placeholder(value):
+        return None
+    scp_match = re.fullmatch(
+        r"git@github\.com:([^/]+)/([^/]+)", value, flags=re.IGNORECASE
+    )
+    if scp_match is not None:
+        owner, repository = scp_match.groups()
+    else:
+        try:
+            parsed = urlsplit(value)
+            port = parsed.port
+        except ValueError:
+            return None
+        if (
+            parsed.scheme not in {"https", "ssh"}
+            or parsed.hostname is None
+            or parsed.hostname.casefold() != "github.com"
+            or parsed.password is not None
+            or parsed.query
+            or parsed.fragment
+        ):
+            return None
+        if parsed.scheme == "https" and (
+            parsed.username is not None or port not in {None, 443}
+        ):
+            return None
+        if parsed.scheme == "ssh" and (
+            parsed.username not in {None, "git"} or port not in {None, 22}
+        ):
+            return None
+        parts = [part for part in parsed.path.split("/") if part]
+        if len(parts) != 2:
+            return None
+        owner, repository = parts
+    if repository.casefold().endswith(".git"):
+        repository = repository[:-4]
+    placeholder_parts = {
         "org",
         "organization",
         "owner",
@@ -101,17 +181,341 @@ def _is_canonical_github_url(value: object) -> bool:
         "your-org",
         "your-repo",
     }
-    return not any(part.casefold() in placeholders for part in parts)
+    name_pattern = re.compile(r"[A-Za-z0-9_.-]+")
+    if (
+        not owner
+        or not repository
+        or owner in {".", ".."}
+        or repository in {".", ".."}
+        or owner.casefold() in placeholder_parts
+        or repository.casefold() in placeholder_parts
+        or name_pattern.fullmatch(owner) is None
+        or name_pattern.fullmatch(repository) is None
+    ):
+        return None
+    normalized = f"https://github.com/{owner}/{repository}"
+    return None if _contains_placeholder(normalized) else normalized
 
 
-def _complete_evidence(value: object) -> bool:
+def _is_canonical_github_url(value: object) -> bool:
+    return isinstance(value, str) and _normalize_github_repository_url(value) == value
+
+
+def _normalized_git_origin(root: Path) -> str | None:
+    try:
+        top_level = subprocess.run(
+            ["git", "-C", str(root), "rev-parse", "--show-toplevel"],
+            check=True,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            timeout=5,
+        ).stdout.strip()
+        if Path(top_level).resolve() != root.resolve():
+            return None
+        origin = subprocess.run(
+            ["git", "-C", str(root), "config", "--get", "remote.origin.url"],
+            check=True,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            timeout=5,
+        ).stdout.strip()
+    except (OSError, subprocess.CalledProcessError, subprocess.TimeoutExpired):
+        return None
+    return _normalize_github_repository_url(origin)
+
+
+def _git_head_sha(root: Path) -> str | None:
+    try:
+        value = subprocess.run(
+            ["git", "-C", str(root), "rev-parse", "--verify", "HEAD"],
+            check=True,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            timeout=5,
+        ).stdout.strip()
+    except (OSError, subprocess.CalledProcessError, subprocess.TimeoutExpired):
+        return None
+    return value if re.fullmatch(r"[0-9a-f]{40}", value) else None
+
+
+def _parse_iso_date(value: object) -> date | None:
+    if not isinstance(value, str) or value != value.strip():
+        return None
+    try:
+        parsed = date.fromisoformat(value)
+    except ValueError:
+        return None
+    return parsed if parsed.isoformat() == value else None
+
+
+def _valid_verification_date(value: object) -> bool:
+    parsed = _parse_iso_date(value)
+    shanghai_today = datetime.now(SHANGHAI_TIMEZONE).date()
+    return parsed is not None and parsed <= shanghai_today
+
+
+def _public_hostname(value: str | None) -> bool:
+    if value is None:
+        return False
+    hostname = value.casefold()
+    if (
+        not hostname
+        or hostname.endswith(".")
+        or len(hostname) > 253
+        or "." not in hostname
+    ):
+        return False
+    if hostname in {
+        "alt",
+        "arpa",
+        "home.arpa",
+        "internal",
+        "localhost",
+        "onion",
+    } or hostname.endswith(SPECIAL_USE_HOST_SUFFIXES):
+        return False
+    try:
+        address = ipaddress.ip_address(hostname)
+    except ValueError:
+        labels = hostname.split(".")
+        return all(
+            re.fullmatch(r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?", label) is not None
+            for label in labels
+        )
+    return address.is_global
+
+
+def _is_reviewable_https(value: object) -> bool:
+    if (
+        not isinstance(value, str)
+        or not value.strip()
+        or value != value.strip()
+        or _contains_placeholder(value)
+    ):
+        return False
+    try:
+        parsed = urlsplit(value)
+        port = parsed.port
+    except ValueError:
+        return False
+    return (
+        parsed.scheme == "https"
+        and parsed.username is None
+        and parsed.password is None
+        and port in {None, 443}
+        and _public_hostname(parsed.hostname)
+    )
+
+
+def _is_routable_private_channel(value: object) -> bool:
+    if (
+        not isinstance(value, str)
+        or not value.strip()
+        or value != value.strip()
+        or _contains_placeholder(value)
+        or "%" in value
+    ):
+        return False
+    try:
+        parsed = urlsplit(value)
+        port = parsed.port
+    except ValueError:
+        return False
+    if parsed.query or parsed.fragment:
+        return False
+    if parsed.scheme == "https":
+        return (
+            parsed.username is None
+            and parsed.password is None
+            and port in {None, 443}
+            and _public_hostname(parsed.hostname)
+        )
+    if parsed.scheme != "mailto" or parsed.netloc:
+        return False
+    address = parsed.path
+    if address.count("@") != 1 or len(address) > 254:
+        return False
+    local, hostname = address.rsplit("@", 1)
+    dot_atom = r"[A-Za-z0-9!#$&'*+/=?^_`{|}~-]+(?:\.[A-Za-z0-9!#$&'*+/=?^_`{|}~-]+)*"
+    return (
+        len(local) <= 64
+        and re.fullmatch(dot_atom, local) is not None
+        and _public_hostname(hostname)
+    )
+
+
+def _public_evidence_markdown(root: Path, value: object, *, blocker_id: str) -> bool:
+    if (
+        not isinstance(value, str)
+        or not value.strip()
+        or value != value.strip()
+        or "\\" in value
+        or _contains_placeholder(value)
+    ):
+        return False
+    try:
+        parsed = urlsplit(value)
+        relative = PurePosixPath(value)
+    except ValueError:
+        return False
+    if parsed.scheme or parsed.netloc or parsed.query or parsed.fragment:
+        return False
+    if (
+        relative.is_absolute()
+        or relative.parent != PUBLIC_EVIDENCE_DIRECTORY
+        or relative.suffix != ".md"
+        or ".." in relative.parts
+    ):
+        return False
+    candidate = root.joinpath(*relative.parts)
+    try:
+        if (
+            not candidate.resolve().is_relative_to(root.resolve())
+            or candidate.is_symlink()
+            or not candidate.is_file()
+        ):
+            return False
+        with candidate.open("rb") as handle:
+            raw = handle.read(MAX_PUBLIC_EVIDENCE_BYTES + 1)
+        if not raw or len(raw) > MAX_PUBLIC_EVIDENCE_BYTES:
+            return False
+        content = raw.decode("utf-8")
+    except (OSError, UnicodeError, ValueError):
+        return False
+    evidence_id = f"Evidence-ID: {blocker_id}"
+    return bool(content.strip()) and evidence_id in {
+        line.strip() for line in content.splitlines()
+    }
+
+
+def _is_reviewable_evidence_reference(
+    root: Path, value: object, *, blocker_id: str
+) -> bool:
+    if _is_reviewable_https(value):
+        return True
+    return _public_evidence_markdown(root, value, blocker_id=blocker_id)
+
+
+def _complete_reviewable_evidence(
+    root: Path, value: object, *, blocker_id: str
+) -> bool:
     return (
         isinstance(value, dict)
-        and isinstance(value.get("reference"), str)
-        and bool(value["reference"].strip())
-        and isinstance(value.get("verified_on"), str)
-        and bool(value["verified_on"].strip())
+        and _valid_verification_date(value.get("verified_on"))
+        and _is_reviewable_evidence_reference(
+            root,
+            value.get("reference"),
+            blocker_id=blocker_id,
+        )
     )
+
+
+def _windows_lpac_evidence_errors(
+    root: Path,
+    evidence: object,
+    *,
+    canonical_url: object,
+    require_live_gate: bool,
+) -> list[str]:
+    errors: list[str] = []
+    if not isinstance(evidence, dict) or set(evidence) != WINDOWS_LPAC_EVIDENCE_FIELDS:
+        return ["Windows LPAC evidence must be a complete structured audit record"]
+
+    verified_on = evidence.get("verified_on")
+    if not _valid_verification_date(verified_on):
+        errors.append("Windows LPAC evidence verification date is invalid or future")
+    if evidence.get("job") != WINDOWS_LPAC_JOB:
+        errors.append("Windows LPAC evidence job is invalid")
+    if evidence.get("workflow") != RELEASE_WORKFLOW_PATH:
+        errors.append("Windows LPAC evidence workflow is invalid")
+    if evidence.get("conclusion") != "success":
+        errors.append("Windows LPAC evidence conclusion must be success")
+
+    head_sha = evidence.get("head_sha")
+    if not isinstance(head_sha, str) or re.fullmatch(r"[0-9a-f]{40}", head_sha) is None:
+        errors.append("Windows LPAC evidence head_sha must be a full commit SHA")
+        head_sha = None
+    normalized_url = _normalize_github_repository_url(canonical_url)
+    repository_slug: str | None = None
+    if normalized_url is not None:
+        repository_slug = urlsplit(normalized_url).path.strip("/")
+    run_url = evidence.get("run_url")
+    if repository_slug is None or not isinstance(run_url, str):
+        errors.append("Windows LPAC evidence run URL is invalid")
+    else:
+        match = re.fullmatch(
+            rf"https://github\.com/{re.escape(repository_slug)}/actions/runs/([1-9][0-9]*)",
+            run_url,
+        )
+        if match is None:
+            errors.append("Windows LPAC evidence run URL is invalid")
+
+    if not require_live_gate:
+        return errors
+
+    local_head_sha = _git_head_sha(root)
+    github_sha = os.environ.get("GITHUB_SHA")
+    tested_head_sha = os.environ.get(LIVE_GATE_HEAD_VARIABLE)
+    if os.environ.get("GITHUB_ACTIONS") != "true":
+        errors.append("release mode requires the live GitHub Actions LPAC gate")
+    if os.environ.get("GITHUB_EVENT_NAME") != "workflow_dispatch":
+        errors.append("live LPAC gate must run in the manual release workflow")
+    if os.environ.get(LIVE_GATE_SCHEMA_VARIABLE) != "1":
+        errors.append("live Windows LPAC signal schema is invalid")
+    if local_head_sha is None:
+        errors.append("release source commit identity cannot be verified")
+    if (
+        not isinstance(github_sha, str)
+        or re.fullmatch(r"[0-9a-f]{40}", github_sha) is None
+    ):
+        errors.append("live workflow SHA is invalid")
+    if tested_head_sha != github_sha or local_head_sha != github_sha:
+        errors.append("Windows LPAC tested SHA differs from the release source")
+    if (
+        repository_slug is not None
+        and os.environ.get("GITHUB_REPOSITORY") != repository_slug
+    ):
+        errors.append("live workflow repository differs from release identity")
+    if os.environ.get("GITHUB_SERVER_URL") != "https://github.com":
+        errors.append("live workflow server is not GitHub Actions")
+    workflow_ref = os.environ.get("GITHUB_WORKFLOW_REF")
+    expected_workflow_ref = (
+        f"{repository_slug}/{RELEASE_WORKFLOW_PATH}@"
+        if repository_slug is not None
+        else None
+    )
+    if (
+        expected_workflow_ref is None
+        or not isinstance(workflow_ref, str)
+        or not workflow_ref.startswith(expected_workflow_ref)
+    ):
+        errors.append("live workflow identity differs from the release workflow")
+    github_run_id = os.environ.get("GITHUB_RUN_ID")
+    live_run_id = os.environ.get(LIVE_GATE_RUN_ID_VARIABLE)
+    if (
+        not isinstance(github_run_id, str)
+        or re.fullmatch(r"[1-9][0-9]*", github_run_id) is None
+        or live_run_id != github_run_id
+    ):
+        errors.append("live Windows LPAC run id is invalid")
+    github_run_attempt = os.environ.get("GITHUB_RUN_ATTEMPT")
+    live_run_attempt = os.environ.get(LIVE_GATE_RUN_ATTEMPT_VARIABLE)
+    if (
+        not isinstance(github_run_attempt, str)
+        or re.fullmatch(r"[1-9][0-9]*", github_run_attempt) is None
+        or live_run_attempt != github_run_attempt
+    ):
+        errors.append("live Windows LPAC run attempt is invalid")
+    if os.environ.get(LIVE_GATE_RESULT_VARIABLE) != "success":
+        errors.append("live Windows LPAC gate did not conclude successfully")
+    if os.environ.get(LIVE_GATE_PROBE_VARIABLE) != "success":
+        errors.append("live Windows LPAC probe did not conclude successfully")
+    if os.environ.get(LIVE_GATE_FINISH_VARIABLE) != "success":
+        errors.append("live Windows LPAC finish did not conclude successfully")
+    return errors
 
 
 def _top_level_cff_values(content: str) -> dict[str, str]:
@@ -172,7 +576,7 @@ def _version_metadata_errors(
             errors.append(
                 "CITATION.cff repository differs from canonical repository URL"
             )
-        if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", citation.get("date-released", "")):
+        if _parse_iso_date(citation.get("date-released")) is None:
             errors.append("CITATION.cff must contain an ISO release date")
     return errors
 
@@ -193,8 +597,26 @@ def _brand_annotation(
     return matches[0] if len(matches) == 1 else None
 
 
+def _valid_brand_license(value: object) -> bool:
+    return isinstance(value, str) and (
+        value in STANDARD_BRAND_LICENSES
+        or re.fullmatch(r"LicenseRef-[A-Za-z0-9][A-Za-z0-9.-]*", value) is not None
+    )
+
+
+def _nonempty_utf8_regular_file(path: Path) -> bool:
+    try:
+        return (
+            not path.is_symlink()
+            and path.is_file()
+            and bool(path.read_text(encoding="utf-8").strip())
+        )
+    except (OSError, UnicodeError, ValueError):
+        return False
+
+
 def _brand_document_errors(
-    root: Path, *, mode: Mode, identity: Mapping[str, object]
+    root: Path, *, brand_rights_resolved: bool, identity: Mapping[str, object]
 ) -> list[str]:
     errors: list[str] = []
     asset = identity.get("asset")
@@ -235,13 +657,20 @@ def _brand_document_errors(
     if isinstance(copyright_text, str) and copyright_text not in notices:
         errors.append("brand copyright status is absent from THIRD_PARTY_NOTICES.md")
 
-    if mode == "release":
-        if not isinstance(license_expression, str) or not re.fullmatch(
-            r"[A-Za-z0-9.+-]+", license_expression
-        ):
-            errors.append("brand release license must be one simple SPDX identifier")
-        elif not (root / "LICENSES" / f"{license_expression}.txt").is_file():
-            errors.append("brand release license text is missing")
+    if _valid_brand_license(license_expression) and not _nonempty_utf8_regular_file(
+        root / "LICENSES" / f"{license_expression}.txt"
+    ):
+        errors.append("brand license text is missing or empty")
+
+    if brand_rights_resolved:
+        pending_license_path = root / "LICENSES" / f"{PENDING_BRAND_LICENSE}.txt"
+        if pending_license_path.exists():
+            errors.append("obsolete unreleased brand license text must be removed")
+        if not _valid_brand_license(license_expression):
+            errors.append(
+                "brand release license must be an allowed SPDX identifier or "
+                "LicenseRef-*"
+            )
         stale_markers = (
             PENDING_BRAND_LICENSE,
             "NOASSERTION",
@@ -257,18 +686,38 @@ def _brand_document_errors(
     return errors
 
 
-def _release_document_errors(
-    root: Path, *, canonical_url: object, channel_references: Mapping[str, str]
+def _channel_document_errors(
+    root: Path, *, channel_references: Mapping[str, str]
 ) -> list[str]:
     errors: list[str] = []
-    contents: dict[str, str] = {}
+    routes = {
+        "security_private_channel_unconfigured": (
+            "CODE_OF_CONDUCT.md",
+            "SECURITY.md",
+        ),
+    }
+    for blocker_id, reference in channel_references.items():
+        for relative in routes[blocker_id]:
+            try:
+                content = (root / relative).read_text(encoding="utf-8")
+            except OSError as exc:
+                errors.append(f"cannot read {relative}: {exc}")
+                continue
+            if reference not in content:
+                errors.append(
+                    f"{relative} does not publish the verified {blocker_id} route"
+                )
+    return errors
+
+
+def _release_document_errors(root: Path, *, canonical_url: object) -> list[str]:
+    errors: list[str] = []
     for relative, markers in UNRELEASED_DOCUMENT_MARKERS.items():
         try:
             content = (root / relative).read_text(encoding="utf-8")
         except OSError as exc:
             errors.append(f"cannot read {relative}: {exc}")
             continue
-        contents[relative] = content
         normalized = " ".join(content.casefold().split())
         if any(marker in normalized for marker in markers):
             errors.append(f"{relative} still contains unreleased-state text")
@@ -281,22 +730,11 @@ def _release_document_errors(
         if not isinstance(canonical_url, str) or canonical_url not in readme:
             errors.append("README.md must contain the canonical repository URL")
 
-    routes = {
-        "coc_primary_channel_unconfigured": "CODE_OF_CONDUCT.md",
-        "coc_alternate_channel_unconfigured": "CODE_OF_CONDUCT.md",
-        "security_private_channel_unconfigured": "SECURITY.md",
-    }
-    for blocker_id, relative in routes.items():
-        reference = channel_references.get(blocker_id)
-        if reference and reference not in contents.get(relative, ""):
-            errors.append(
-                f"{relative} does not publish the verified {blocker_id} route"
-            )
     return errors
 
 
 def _project_identity_errors(
-    root: Path, *, mode: Mode
+    root: Path, *, mode: Literal["development", "release"], brand_rights_resolved: bool
 ) -> tuple[list[str], dict[str, object] | None]:
     errors: list[str] = []
     disclaimer_path = root / "DISCLAIMER.md"
@@ -404,11 +842,35 @@ def _project_identity_errors(
         trademark_record = {}
     if copyright_record.get("spdx_license") != asset_license:
         errors.append("brand copyright license differs from compatibility field")
+    if canonical_url is not None:
+        if not _is_canonical_github_url(canonical_url):
+            errors.append(
+                "canonical repository URL must be a normalized HTTPS GitHub URL"
+            )
+        else:
+            normalized_origin = _normalized_git_origin(root)
+            if normalized_origin is None:
+                errors.append("cannot verify canonical URL against remote.origin.url")
+            elif normalized_origin != canonical_url:
+                errors.append("canonical repository URL differs from remote.origin.url")
+
     if mode == "development":
-        if canonical_url is not None:
-            errors.append("development canonical repository URL must remain null")
         if manifest.get("github_display") != DEVELOPMENT_REPOSITORY_DISPLAY:
             errors.append("development brand manifest must use the pending URL display")
+    else:
+        if not _is_canonical_github_url(canonical_url):
+            errors.append("canonical repository URL must be a real HTTPS GitHub URL")
+        if not (
+            isinstance(manifest.get("github_display"), str)
+            and isinstance(canonical_url, str)
+            and canonical_url in manifest["github_display"]
+            and DEVELOPMENT_REPOSITORY_DISPLAY not in manifest["github_display"]
+        ):
+            errors.append(
+                "release brand manifest must display the canonical repository"
+            )
+
+    if not brand_rights_resolved:
         if (
             rights_status != "unverified"
             or rights_evidence is not None
@@ -430,20 +892,13 @@ def _project_identity_errors(
         ):
             errors.append("development brand trademark must remain unverified")
     else:
-        if not _is_canonical_github_url(canonical_url):
-            errors.append("canonical repository URL must be a real HTTPS GitHub URL")
-        if not (
-            isinstance(manifest.get("github_display"), str)
-            and isinstance(canonical_url, str)
-            and canonical_url in manifest["github_display"]
-            and DEVELOPMENT_REPOSITORY_DISPLAY not in manifest["github_display"]
-        ):
-            errors.append(
-                "release brand manifest must display the canonical repository"
-            )
         if (
             rights_status != "verified"
-            or not isinstance(rights_evidence, dict)
+            or not _complete_reviewable_evidence(
+                root,
+                rights_evidence,
+                blocker_id="brand_asset_rights_unverified",
+            )
             or not isinstance(asset_license, str)
             or not asset_license.strip()
             or asset_license == PENDING_BRAND_LICENSE
@@ -457,7 +912,11 @@ def _project_identity_errors(
             or copyright_record.get("spdx_copyright_text") == "NOASSERTION"
             or not isinstance(copyright_record.get("spdx_license"), str)
             or copyright_record.get("spdx_license") == PENDING_BRAND_LICENSE
-            or not _complete_evidence(copyright_record.get("evidence"))
+            or not _complete_reviewable_evidence(
+                root,
+                copyright_record.get("evidence"),
+                blocker_id="brand_asset_rights_unverified",
+            )
         ):
             errors.append(
                 "brand copyright ownership and redistribution must be "
@@ -466,7 +925,11 @@ def _project_identity_errors(
         if (
             trademark_record.get("status") != "verified"
             or trademark_record.get("public_use_authorized") is not True
-            or not _complete_evidence(trademark_record.get("evidence"))
+            or not _complete_reviewable_evidence(
+                root,
+                trademark_record.get("evidence"),
+                blocker_id="brand_asset_rights_unverified",
+            )
         ):
             errors.append("brand trademark use must be verified for release")
 
@@ -476,13 +939,31 @@ def _project_identity_errors(
 def assess_release_readiness(root: Path, *, mode: Mode) -> ReadinessResult:
     status_path = root / "compliance" / "release-status.json"
     errors: list[str] = []
+    if mode not in {"current", "development", "release"}:
+        return ReadinessResult(False, (f"unsupported readiness mode: {mode}",))
     try:
         status = json.loads(status_path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as exc:
         return ReadinessResult(False, (f"cannot read release status: {exc}",))
+    if not isinstance(status, dict):
+        return ReadinessResult(False, ("release status must be an object",))
 
     if status.get("schema_version") != 1:
         errors.append("release status schema_version must be 1")
+
+    state = status.get("state")
+    if mode == "current":
+        if state == "PUBLIC_RELEASE_BLOCKED":
+            effective_mode: Literal["development", "release"] = "development"
+        elif state == "PUBLIC_RELEASE_READY":
+            effective_mode = "release"
+        else:
+            return ReadinessResult(
+                False,
+                tuple(errors + ["current mode requires a recognized release state"]),
+            )
+    else:
+        effective_mode = mode
 
     blocker_items = status.get("blockers")
     if not isinstance(blocker_items, list):
@@ -499,9 +980,17 @@ def assess_release_readiness(root: Path, *, mode: Mode) -> ReadinessResult:
         blockers[blocker_id] = item
 
     if set(blockers) != REQUIRED_BLOCKERS:
-        errors.append("release status must contain the six required blockers")
+        errors.append(
+            "release status must contain exactly the required personal-project blockers"
+        )
 
-    project_errors, identity = _project_identity_errors(root, mode=mode)
+    brand_blocker = blockers.get("brand_asset_rights_unverified", {})
+    brand_rights_resolved = brand_blocker.get("resolved") is True
+    project_errors, identity = _project_identity_errors(
+        root,
+        mode=effective_mode,
+        brand_rights_resolved=brand_rights_resolved,
+    )
     errors.extend(project_errors)
     canonical_url: object = None
     if identity is not None:
@@ -511,60 +1000,110 @@ def assess_release_readiness(root: Path, *, mode: Mode) -> ReadinessResult:
         errors.extend(
             _version_metadata_errors(
                 root,
-                mode=mode,
+                mode=effective_mode,
                 canonical_url=canonical_url,
             )
         )
-        errors.extend(_brand_document_errors(root, mode=mode, identity=identity))
+        errors.extend(
+            _brand_document_errors(
+                root,
+                brand_rights_resolved=brand_rights_resolved,
+                identity=identity,
+            )
+        )
 
-    if mode == "development":
-        if status.get("state") != "PUBLIC_RELEASE_BLOCKED":
+    if effective_mode == "development":
+        if state != "PUBLIC_RELEASE_BLOCKED":
             errors.append("development state must remain PUBLIC_RELEASE_BLOCKED")
-        for blocker_id in REQUIRED_BLOCKERS:
-            item = blockers.get(blocker_id, {})
-            if item.get("resolved") is not False or item.get("evidence") is not None:
-                errors.append(f"development blocker must be unresolved: {blocker_id}")
-        return ReadinessResult(not errors, tuple(errors))
-
-    if status.get("state") != "PUBLIC_RELEASE_READY":
+    elif state != "PUBLIC_RELEASE_READY":
         errors.append("release mode requires PUBLIC_RELEASE_READY")
 
     channel_references: dict[str, str] = {}
-    for blocker_id in REQUIRED_BLOCKERS:
+    resolved: dict[str, bool] = {}
+    for blocker_id in sorted(REQUIRED_BLOCKERS):
         item = blockers.get(blocker_id, {})
+        resolved_value = item.get("resolved")
         evidence = item.get("evidence")
-        if item.get("resolved") is not True or not isinstance(evidence, dict):
-            errors.append(f"release blocker lacks verified evidence: {blocker_id}")
+        if not isinstance(resolved_value, bool):
+            errors.append(f"blocker resolved must be boolean: {blocker_id}")
+            resolved[blocker_id] = False
+            continue
+        resolved[blocker_id] = resolved_value
+        if not resolved_value:
+            if evidence is not None:
+                errors.append(
+                    f"unresolved blocker must not carry evidence: {blocker_id}"
+                )
+            continue
+        if not isinstance(evidence, dict):
+            errors.append(f"resolved blocker lacks evidence: {blocker_id}")
+            continue
+        if blocker_id == WINDOWS_LPAC_BLOCKER:
+            errors.extend(
+                _windows_lpac_evidence_errors(
+                    root,
+                    evidence,
+                    canonical_url=canonical_url,
+                    require_live_gate=mode == "release",
+                )
+            )
             continue
         reference = evidence.get("reference")
-        verified_on = evidence.get("verified_on")
-        if not isinstance(reference, str) or not reference.strip():
-            errors.append(f"evidence reference missing: {blocker_id}")
-        if not isinstance(verified_on, str) or not verified_on.strip():
-            errors.append(f"evidence verification date missing: {blocker_id}")
-        if blocker_id in PRIVATE_CHANNEL_BLOCKERS:
+        if not _valid_verification_date(evidence.get("verified_on")):
+            errors.append(
+                f"evidence verification date is invalid or future: {blocker_id}"
+            )
+        if blocker_id == "canonical_repository_url_unconfigured":
+            if reference != canonical_url:
+                errors.append("repository blocker evidence differs from canonical URL")
+        elif blocker_id in PRIVATE_CHANNEL_BLOCKERS:
             if evidence.get("private") is not True:
                 errors.append(f"reporting channel must be private: {blocker_id}")
-            if isinstance(reference, str):
+            if not _is_routable_private_channel(reference):
+                errors.append(
+                    "reporting channel must be a routable HTTPS or mailto URI: "
+                    f"{blocker_id}"
+                )
+            elif isinstance(reference, str):
                 channel_references[blocker_id] = reference
+            verification_reference = evidence.get("verification_reference")
+            if not _public_evidence_markdown(
+                root,
+                verification_reference,
+                blocker_id=blocker_id,
+            ):
+                errors.append(
+                    "reporting channel verification_reference must point to a "
+                    f"public evidence Markdown record: {blocker_id}"
+                )
+        elif not _is_reviewable_evidence_reference(
+            root,
+            reference,
+            blocker_id=blocker_id,
+        ):
+            errors.append(f"reviewable evidence reference is invalid: {blocker_id}")
 
-    folded_channels = [
-        reference.casefold() for reference in channel_references.values()
-    ]
-    if len(folded_channels) != len(set(folded_channels)):
-        errors.append("primary, alternate, and security channels must be distinct")
+    canonical_blocker_resolved = resolved.get(
+        "canonical_repository_url_unconfigured", False
+    )
+    if canonical_url is None:
+        if canonical_blocker_resolved:
+            errors.append("repository blocker cannot resolve without a canonical URL")
+    elif not canonical_blocker_resolved:
+        errors.append("configured canonical URL requires a resolved repository blocker")
+
+    if state == "PUBLIC_RELEASE_BLOCKED" and all(
+        resolved.get(blocker_id, False) for blocker_id in REQUIRED_BLOCKERS
+    ):
+        errors.append("blocked state requires at least one unresolved blocker")
+
+    if effective_mode == "release":
+        for blocker_id in sorted(REQUIRED_BLOCKERS):
+            if not resolved.get(blocker_id, False):
+                errors.append(f"release blocker remains unresolved: {blocker_id}")
 
     if identity is not None:
-        repository = identity.get("repository")
         asset = identity.get("asset")
-        if isinstance(repository, dict):
-            repository_evidence = blockers.get(
-                "canonical_repository_url_unconfigured", {}
-            ).get("evidence")
-            if isinstance(repository_evidence, dict) and repository_evidence.get(
-                "reference"
-            ) != repository.get("canonical_url"):
-                errors.append("repository blocker evidence differs from canonical URL")
         if isinstance(asset, dict):
             brand_evidence = blockers.get("brand_asset_rights_unverified", {}).get(
                 "evidence"
@@ -572,20 +1111,18 @@ def assess_release_readiness(root: Path, *, mode: Mode) -> ReadinessResult:
             if brand_evidence != asset.get("evidence"):
                 errors.append("brand rights evidence differs from project identity")
 
-    errors.extend(
-        _release_document_errors(
-            root,
-            canonical_url=canonical_url,
-            channel_references=channel_references,
-        )
-    )
+    errors.extend(_channel_document_errors(root, channel_references=channel_references))
+    if effective_mode == "release":
+        errors.extend(_release_document_errors(root, canonical_url=canonical_url))
 
     return ReadinessResult(not errors, tuple(errors))
 
 
 def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--mode", choices=("development", "release"), required=True)
+    parser.add_argument(
+        "--mode", choices=("current", "development", "release"), required=True
+    )
     parser.add_argument("--root", type=Path, default=Path.cwd())
     args = parser.parse_args()
     result = assess_release_readiness(args.root.resolve(), mode=args.mode)

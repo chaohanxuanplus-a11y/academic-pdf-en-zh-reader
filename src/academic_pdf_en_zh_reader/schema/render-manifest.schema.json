@@ -220,19 +220,40 @@
       ],
       "properties": {
         "output_page_number": {"type": "integer", "minimum": 1},
-        "source_page_number": {"type": "integer", "minimum": 1},
-        "page_kind": {"enum": ["native", "continuation"]},
+        "source_page_number": {"type": ["integer", "null"], "minimum": 1},
+        "page_kind": {"enum": ["native", "continuation", "disclaimer"]},
         "continuation_index": {"type": "integer", "minimum": 0},
-        "source_crop_box_mpt": {"$ref": "#/$defs/box_mpt"},
-        "source_normalized_visible_box_mpt": {"$ref": "#/$defs/box_mpt"},
-        "source_rotation_degrees": {"enum": [0, 90, 180, 270]},
-        "source_transform_mpt": {"$ref": "#/$defs/matrix_mpt"},
+        "source_crop_box_mpt": {"anyOf": [{"$ref": "#/$defs/box_mpt"}, {"type": "null"}]},
+        "source_normalized_visible_box_mpt": {"anyOf": [{"$ref": "#/$defs/box_mpt"}, {"type": "null"}]},
+        "source_rotation_degrees": {"enum": [0, 90, 180, 270, null]},
+        "source_transform_mpt": {"anyOf": [{"$ref": "#/$defs/matrix_mpt"}, {"type": "null"}]},
         "overlay_page_plan_hash": {"$ref": "#/$defs/sha256"},
         "overlay_image_fingerprints": {
           "type": "array",
           "items": {"$ref": "#/$defs/sha256"}
         },
         "continuation_label_present": {"type": "boolean"}
+      },
+      "if": {"properties": {"page_kind": {"const": "disclaimer"}}},
+      "then": {
+        "properties": {
+          "source_page_number": {"type": "null"},
+          "source_crop_box_mpt": {"type": "null"},
+          "source_normalized_visible_box_mpt": {"type": "null"},
+          "source_rotation_degrees": {"type": "null"},
+          "source_transform_mpt": {"type": "null"},
+          "continuation_index": {"const": 0},
+          "continuation_label_present": {"const": false}
+        }
+      },
+      "else": {
+        "properties": {
+          "source_page_number": {"type": "integer"},
+          "source_crop_box_mpt": {"$ref": "#/$defs/box_mpt"},
+          "source_normalized_visible_box_mpt": {"$ref": "#/$defs/box_mpt"},
+          "source_rotation_degrees": {"enum": [0, 90, 180, 270]},
+          "source_transform_mpt": {"$ref": "#/$defs/matrix_mpt"}
+        }
       }
     },
     "block_mapping": {

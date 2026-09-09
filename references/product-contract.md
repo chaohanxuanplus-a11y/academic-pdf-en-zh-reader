@@ -41,16 +41,21 @@ SHA-256 are recorded separately.
   shrunk, reordered, overlapped, or replaced with optional teaching content.
 - Only single-column or spanning bands use grey dashed leaders. Multi-column bands
   use no leader and treat first-line vertical proximity as a soft objective.
-- When terminal reference entries leave the target side unused, place exactly one
-  fixed project identity and condensed disclaimer card in the first safe eligible
-  right-side region. If the translated `References` heading occupies that region,
-  place the card below it or use the next reference-only region. The card includes
+- Every successfully delivered file must contain exactly one fixed responsibility
+  statement at its end. If the final paper page has a safe eligible right-side
+  reference region, place the project identity and disclaimer card there below
+  any translated `References` heading. Otherwise append one dedicated final A3
+  landscape statement page, explicitly identified as project-authored rather
+  than a source-paper page, with no fabricated source-page association. The card includes
   the approved logo, `瀚海问材`, the Skill name, the configured repository display,
   and fixed disclaimer text. It is project-authored provenance, not paper
   translation or annotation: it uses no leader, does not enter translation
-  coverage or red/orange budgets, never overlaps required content, and never adds
-  a page. If no safe eligible region exists, omit it rather than violate a hard
-  gate.
+  coverage or red/orange budgets and never overlaps required content. Do not omit
+  the statement when space is insufficient and do not move or shrink paper text
+  to make room. The dedicated page includes a fixed explanation that it was added
+  because the preceding final page had no safe space. On successful delivery,
+  surface the fixed appended-page notice to the user. If the required statement
+  cannot be rendered or validated, fail closed without delivering a final PDF.
 
 ## Failure precedence
 

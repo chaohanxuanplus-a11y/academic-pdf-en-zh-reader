@@ -35,8 +35,8 @@ jobs:
         run: uv run --frozen ruff format --check .
       - name: Dependency and license inventory
         run: uv run --frozen python scripts/check_dependency_policy.py
-      - name: Development release-state gate
-        run: uv run --frozen python scripts/check_release_readiness.py --mode development
+      - name: Current release-state gate
+        run: uv run --frozen python scripts/check_release_readiness.py --mode current
       - name: GitHub Actions policy
         run: uv run --frozen python scripts/check_github_actions_policy.py
 
@@ -60,7 +60,7 @@ jobs:
       - name: Smoke test the restricted Windows worker
         run: uv run --python "$env:pythonLocation\python.exe" --frozen pytest -q tests/security/test_windows_worker_limits.py::test_worker_uses_restricted_token_and_enforced_job_limits
       - name: Verify the production AppContainer security probe
-        run: uv run --python "$env:pythonLocation\python.exe" --frozen pytest -q tests/security/test_windows_worker_limits.py::test_full_security_probe_is_truthful_and_fail_closed
+        run: uv run --python "$env:pythonLocation\python.exe" --frozen python scripts/probe_worker_sandbox.py
       - name: Test the Windows worker and production pipeline
         run: uv run --python "$env:pythonLocation\python.exe" --frozen pytest -q
 
@@ -75,7 +75,6 @@ jobs:
       - uses: fsfe/reuse-action@676e2d560c9a403aa252096d99fcab3e1132b0f5 # v6.0.0
 
   codeql:
-    if: ${{ github.event.repository.private == false }}
     runs-on: ubuntu-24.04
     permissions:
       actions: read
@@ -88,4 +87,11 @@ jobs:
       - uses: github/codeql-action/init@7211b7c8077ea37d8641b6271f6a365a22a5fbfa # v4.36.0
         with:
           languages: python
-      - uses: github/codeql-action/analyze@7211b7c8077ea37d8641b6271f6a365a22a5fbfa # v4.36.0
+      - if: ${{ github.event.repository.private == true }}
+        uses: github/codeql-action/analyze@7211b7c8077ea37d8641b6271f6a365a22a5fbfa # v4.36.0
+        with:
+          upload: never
+      - if: ${{ github.event.repository.private == false }}
+        uses: github/codeql-action/analyze@7211b7c8077ea37d8641b6271f6a365a22a5fbfa # v4.36.0
+        with:
+          upload: always

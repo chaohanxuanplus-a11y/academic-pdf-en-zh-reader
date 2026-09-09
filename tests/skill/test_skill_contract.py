@@ -155,9 +155,12 @@ def test_runbook_uses_the_safe_binding_helper_with_private_templates() -> None:
     }
 
 
-def test_public_status_is_locally_accepted_candidate_not_released() -> None:
+def test_public_status_matches_the_declared_release_lifecycle() -> None:
     readme = (ROOT / "README.md").read_text(encoding="utf-8")
     privacy = (ROOT / "PRIVACY.md").read_text(encoding="utf-8")
+    status = json.loads(
+        (ROOT / "compliance" / "release-status.json").read_text(encoding="utf-8")
+    )
     plan = (
         ROOT
         / "docs"
@@ -166,16 +169,24 @@ def test_public_status_is_locally_accepted_candidate_not_released() -> None:
         / "2026-08-27-academic-pdf-bilingual-reader-implementation-plan.md"
     ).read_text(encoding="utf-8")
 
-    for public_doc in (readme, privacy):
-        top = "\n".join(public_doc.splitlines()[:25]).casefold()
-        assert "local candidate" in top
-        assert "passed local acceptance" in top
-        assert "public release" in top and "blocked" in top
-        assert "production-ready" not in top
+    state = status["state"]
+    assert state in {"PUBLIC_RELEASE_BLOCKED", "PUBLIC_RELEASE_READY"}
     plan_top = "\n".join(plan.splitlines()[:15])
-    assert "本地候选实现" in plan_top
-    assert "验收已完成" in plan_top
-    assert "公开发布仍阻断" in plan_top
+    if state == "PUBLIC_RELEASE_BLOCKED":
+        for public_doc in (readme, privacy):
+            top = "\n".join(public_doc.splitlines()[:25]).casefold()
+            assert "local candidate" in top
+            assert "passed local acceptance" in top
+            assert "public release" in top and "blocked" in top
+            assert "production-ready" not in top
+        assert "本地候选实现" in plan_top
+        assert "验收已完成" in plan_top
+        assert "公开发布仍阻断" in plan_top
+    else:
+        assert "public release remains blocked" not in readme.casefold()
+        assert "public release remains blocked" not in privacy.casefold()
+        assert "not a release or deployment claim" not in privacy.casefold()
+        assert "公开发布仍阻断" not in plan_top
 
 
 def test_schema_guide_covers_parent_bound_semantic_candidates() -> None:

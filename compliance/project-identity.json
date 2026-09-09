@@ -6,27 +6,36 @@
     "skill_name": "academic-pdf-en-zh-reader"
   },
   "repository": {
-    "canonical_url": null,
+    "canonical_url": "https://github.com/chaohanxuanplus-a11y/academic-pdf-en-zh-reader",
     "development_display": "GitHub：公开发布后提供"
   },
   "asset": {
     "path": "assets/branding/hanhai-wencai.png",
     "sha256": "1bb1dad5b83bd3b98060e513f3298bb0ace2bf4669590f60c6a3fbbdfb4ba0ab",
     "size": 1471096,
-    "spdx_license": "LicenseRef-HanhaiWencai-Unreleased",
-    "rights_status": "unverified",
-    "evidence": null,
+    "spdx_license": "LicenseRef-HanhaiWencai-SkillOutputOnly",
+    "rights_status": "verified",
+    "evidence": {
+      "reference": "compliance/evidence/public/brand-use-declaration-20260910.md",
+      "verified_on": "2026-09-10"
+    },
     "copyright": {
-      "ownership_status": "unverified",
-      "public_redistribution_authorized": false,
-      "spdx_copyright_text": "NOASSERTION",
-      "spdx_license": "LicenseRef-HanhaiWencai-Unreleased",
-      "evidence": null
+      "ownership_status": "verified",
+      "public_redistribution_authorized": true,
+      "spdx_copyright_text": "2026 chaohanxuan",
+      "spdx_license": "LicenseRef-HanhaiWencai-SkillOutputOnly",
+      "evidence": {
+        "reference": "compliance/evidence/public/brand-use-declaration-20260910.md",
+        "verified_on": "2026-09-10"
+      }
     },
     "trademark": {
-      "status": "unverified",
-      "public_use_authorized": false,
-      "evidence": null
+      "status": "verified",
+      "public_use_authorized": true,
+      "evidence": {
+        "reference": "compliance/evidence/public/brand-use-declaration-20260910.md",
+        "verified_on": "2026-09-10"
+      }
     }
   },
   "output_disclaimer": {

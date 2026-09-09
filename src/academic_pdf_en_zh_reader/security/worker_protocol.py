@@ -28,6 +28,16 @@ NORMALIZATION_POLICY_VERSION = "1.0.0"
 NORMALIZATION_PDF_PATH = "output/normalized-source.pdf"
 NORMALIZATION_ARTIFACT_PATH = "output/normalization.json"
 NORMALIZATION_PREFLIGHT_PATH = "preflight.json"
+RENDER_POLICY_VERSION = "1.0.0"
+RENDER_INPUT_PATH = "input.pdf"
+RENDER_HANDOFF_PATH = "render-input.json"
+RENDER_PDF_PATH = "candidate.pdf"
+RENDER_MANIFEST_PATH = "render-manifest.json"
+QA_POLICY_VERSION = "1.0.0"
+QA_INPUT_PATH = "input.pdf"
+QA_HANDOFF_PATH = "qa-input.json"
+QA_CANDIDATE_PATH = "candidate.pdf"
+QA_ARTIFACT_PATH = "qa.json"
 _MAX_STRING_LENGTH = 4096
 _MAX_INTEGER_DIGITS = 64
 _MAX_CONTAINER_ITEMS = 64
@@ -245,10 +255,17 @@ def _request_from_payload(payload: Mapping[str, Any]) -> WorkerRequest:
     allowed = required | {"parameters"}
     if not required <= payload.keys() or not payload.keys() <= allowed:
         raise ProtocolError("request fields do not match the schema")
-    if isinstance(payload["version"], bool) or payload["version"] != PROTOCOL_VERSION:
+    if type(payload["version"]) is not int or payload["version"] != PROTOCOL_VERSION:
         raise ProtocolError("unsupported protocol version")
     operation = payload["operation"]
-    if operation not in {"extract", "normalize", "preflight", "probe"}:
+    if operation not in {
+        "extract",
+        "normalize",
+        "preflight",
+        "probe",
+        "qa",
+        "render",
+    }:
         raise ProtocolError("unsupported worker operation")
     validate_relative_path(payload["input_path"])
     parameters = payload.get("parameters", {})
@@ -261,6 +278,10 @@ def _request_from_payload(payload: Mapping[str, Any]) -> WorkerRequest:
         _validate_extraction_request(payload["input_path"], parameters)
     if operation == "normalize":
         _validate_normalization_request(payload["input_path"], parameters)
+    if operation == "render":
+        _validate_render_request(payload["input_path"], parameters)
+    if operation == "qa":
+        _validate_qa_request(payload["input_path"], parameters)
     return WorkerRequest(
         operation=operation,
         input_path=payload["input_path"],
@@ -358,6 +379,88 @@ def _validate_normalization_request(
         raise ProtocolError("normalization input_bytes must be a positive integer")
 
 
+def _validate_sha256(value: object, *, label: str) -> None:
+    if (
+        not isinstance(value, str)
+        or len(value) != 64
+        or any(character not in "0123456789abcdef" for character in value)
+    ):
+        raise ProtocolError(f"{label} must be lowercase SHA-256")
+
+
+def _validate_positive_size(value: object, *, label: str) -> None:
+    if type(value) is not int or value <= 0:
+        raise ProtocolError(f"{label} must be a positive integer")
+
+
+def _validate_render_request(
+    input_path: object,
+    parameters: Mapping[str, Any],
+) -> None:
+    if input_path != RENDER_INPUT_PATH:
+        raise ProtocolError(f"render input_path must be {RENDER_INPUT_PATH!r}")
+    required = {
+        "policy_version",
+        "input_bytes",
+        "normalized_pdf_sha256",
+        "handoff_bytes",
+        "handoff_sha256",
+    }
+    if set(parameters) != required:
+        raise ProtocolError("render parameters do not match the schema")
+    if parameters["policy_version"] != RENDER_POLICY_VERSION:
+        raise ProtocolError("unsupported render policy_version")
+    _validate_positive_size(parameters["input_bytes"], label="render input_bytes")
+    _validate_sha256(
+        parameters["normalized_pdf_sha256"],
+        label="render normalized_pdf_sha256",
+    )
+    _validate_positive_size(
+        parameters["handoff_bytes"],
+        label="render handoff_bytes",
+    )
+    _validate_sha256(
+        parameters["handoff_sha256"],
+        label="render handoff_sha256",
+    )
+
+
+def _validate_qa_request(
+    input_path: object,
+    parameters: Mapping[str, Any],
+) -> None:
+    if input_path != QA_INPUT_PATH:
+        raise ProtocolError(f"qa input_path must be {QA_INPUT_PATH!r}")
+    required = {
+        "policy_version",
+        "input_bytes",
+        "normalized_pdf_sha256",
+        "candidate_bytes",
+        "candidate_pdf_sha256",
+        "handoff_bytes",
+        "handoff_sha256",
+    }
+    if set(parameters) != required:
+        raise ProtocolError("qa parameters do not match the schema")
+    if parameters["policy_version"] != QA_POLICY_VERSION:
+        raise ProtocolError("unsupported qa policy_version")
+    _validate_positive_size(parameters["input_bytes"], label="qa input_bytes")
+    _validate_sha256(
+        parameters["normalized_pdf_sha256"],
+        label="qa normalized_pdf_sha256",
+    )
+    _validate_positive_size(
+        parameters["candidate_bytes"],
+        label="qa candidate_bytes",
+    )
+    _validate_sha256(
+        parameters["candidate_pdf_sha256"],
+        label="qa candidate_pdf_sha256",
+    )
+    _validate_positive_size(parameters["handoff_bytes"], label="qa handoff_bytes")
+    _validate_sha256(parameters["handoff_sha256"], label="qa handoff_sha256")
+
+
 def encode_response(response: WorkerResponse, limits: WorkerLimits) -> bytes:
     payload = {
         "error": dict(response.error) if response.error is not None else None,
@@ -379,7 +482,7 @@ def decode_response(raw: bytes, limits: WorkerLimits) -> WorkerResponse:
 def _validate_response_payload(payload: Mapping[str, Any]) -> WorkerResponse:
     if set(payload) != {"version", "status", "result", "error"}:
         raise ProtocolError("response fields do not match the schema")
-    if payload["version"] != PROTOCOL_VERSION:
+    if type(payload["version"]) is not int or payload["version"] != PROTOCOL_VERSION:
         raise ProtocolError("unsupported protocol version")
     status = payload["status"]
     result = payload["result"]

@@ -189,12 +189,27 @@ def _validate_plan_for_drawing(plan: Mapping[str, object]) -> None:
         or not plan["pages"]
     ):
         raise OverlayRenderError("overlay plan root is invalid")
-    for expected_page, page in enumerate(plan["pages"], start=1):
+    pages = plan["pages"]
+    for expected_page, page in enumerate(pages, start=1):
         if not isinstance(page, Mapping) or page.get("page_number") != expected_page:
             raise OverlayRenderError("overlay plan page order is invalid")
         _validate_frozen_page(page)
         for route in page["leader_routes"]:
             _route(route)
+    branding = plan.get("branding")
+    branded_pages = [page["page_number"] for page in pages if page.get("brand_block")]
+    disclaimer_pages = [
+        page["page_number"] for page in pages if page.get("page_kind") == "disclaimer"
+    ]
+    if (
+        not isinstance(branding, Mapping)
+        or branded_pages != [len(pages)]
+        or branding.get("rendered_page_number") != len(pages)
+        or disclaimer_pages not in ([], [len(pages)])
+        or branding.get("appended_page_number")
+        != (len(pages) if disclaimer_pages else None)
+    ):
+        raise OverlayRenderError("final disclaimer page binding is invalid")
 
 
 def _render_validated_overlay_pdf(plan: Mapping[str, object]) -> bytes:

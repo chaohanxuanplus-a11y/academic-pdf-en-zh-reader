@@ -61,6 +61,9 @@ def build_render_fixture(
     page_crop_box_mpt: list[int] | None = None,
     rotation_degrees: int = 0,
     include_reference_page: bool = False,
+    include_reference_heading: bool = False,
+    reference_heading_chinese_text: str = "参考文献",
+    include_following_reference_page: bool = False,
 ) -> tuple[dict[str, object], ...]:
     if normalized_pdf_sha256 is None:
         normalized_pdf_sha256 = source_sha256
@@ -171,13 +174,79 @@ def build_render_fixture(
         ],
     }
     if include_reference_page:
-        reference_text = "[1] Example reference entry. Journal 2026;1:1-2."
-        reference_id = stable_source_id(
+        reference_heading_text = "References"
+        reference_heading_id = stable_source_id(
             page_number=2,
             reading_order=1,
-            role="reference-entry",
+            role="heading",
             source_char_start=0,
-            source_char_end=len(reference_text),
+            source_char_end=len(reference_heading_text),
+        )
+        reference_text = "[1] Example reference entry. Journal 2026;1:1-2."
+        reference_start = (
+            len(reference_heading_text) + 1 if include_reference_heading else 0
+        )
+        reference_entry_top = 730_000 if include_reference_heading else 780_000
+        reference_id = stable_source_id(
+            page_number=2,
+            reading_order=2 if include_reference_heading else 1,
+            role="reference-entry",
+            source_char_start=reference_start,
+            source_char_end=reference_start + len(reference_text),
+        )
+        reference_blocks = []
+        if include_reference_heading:
+            reference_blocks.append(
+                {
+                    "id": reference_heading_id,
+                    "role": "heading",
+                    "translation_policy": "required",
+                    "band_id": "references-band",
+                    "column_id": "references-column-0",
+                    "reading_order": 1,
+                    "source_char_start": 0,
+                    "source_char_end": len(reference_heading_text),
+                    "text": reference_heading_text,
+                    "bbox_mpt": [
+                        crop_left + 40_000,
+                        crop_bottom + 760_000,
+                        crop_left + 180_000,
+                        crop_bottom + 780_000,
+                    ],
+                    "first_line_bbox_mpt": [
+                        crop_left + 40_000,
+                        crop_bottom + 760_000,
+                        crop_left + 180_000,
+                        crop_bottom + 780_000,
+                    ],
+                    "confidence_ppm": 990_000,
+                }
+            )
+        reference_blocks.append(
+            {
+                "id": reference_id,
+                "role": "reference-entry",
+                "translation_policy": "excluded",
+                "band_id": "references-band",
+                "column_id": "references-column-0",
+                "reading_order": 2 if include_reference_heading else 1,
+                "source_char_start": reference_start,
+                "source_char_end": reference_start + len(reference_text),
+                "text": reference_text,
+                "bbox_mpt": [
+                    crop_left + 40_000,
+                    crop_bottom + 100_000,
+                    crop_left + 555_276,
+                    crop_bottom + reference_entry_top,
+                ],
+                "first_line_bbox_mpt": [
+                    crop_left + 40_000,
+                    crop_bottom + reference_entry_top - 20_000,
+                    crop_left + 300_000,
+                    crop_bottom + reference_entry_top,
+                ],
+                "confidence_ppm": 990_000,
+            }
         )
         source["pages"].append(  # type: ignore[union-attr]
             {
@@ -210,34 +279,37 @@ def build_render_fixture(
                     }
                 ],
                 "graphic_nodes": [],
-                "blocks": [
-                    {
-                        "id": reference_id,
-                        "role": "reference-entry",
-                        "translation_policy": "excluded",
-                        "band_id": "references-band",
-                        "column_id": "references-column-0",
-                        "reading_order": 1,
-                        "source_char_start": 0,
-                        "source_char_end": len(reference_text),
-                        "text": reference_text,
-                        "bbox_mpt": [
-                            crop_left + 40_000,
-                            crop_bottom + 100_000,
-                            crop_left + 555_276,
-                            crop_bottom + 780_000,
-                        ],
-                        "first_line_bbox_mpt": [
-                            crop_left + 40_000,
-                            crop_bottom + 760_000,
-                            crop_left + 300_000,
-                            crop_bottom + 780_000,
-                        ],
-                        "confidence_ppm": 990_000,
-                    }
-                ],
+                "blocks": reference_blocks,
             }
         )
+        if include_following_reference_page:
+            following_text = "[2] Following reference entry. Journal 2026;1:3-4."
+            following_reading_order = 3 if include_reference_heading else 2
+            following_id = stable_source_id(
+                page_number=3,
+                reading_order=following_reading_order,
+                role="reference-entry",
+                source_char_start=0,
+                source_char_end=len(following_text),
+            )
+            following_page = deepcopy(source["pages"][-1])  # type: ignore[index]
+            following_page["page_number"] = 3
+            following_band = following_page["bands"][0]
+            following_band["id"] = "following-references-band"
+            following_column = following_band["columns"][0]
+            following_column["id"] = "following-references-column-0"
+            following_entry = deepcopy(reference_blocks[-1])
+            following_entry.update(
+                id=following_id,
+                band_id=following_band["id"],
+                column_id=following_column["id"],
+                reading_order=following_reading_order,
+                source_char_start=0,
+                source_char_end=len(following_text),
+                text=following_text,
+            )
+            following_page["blocks"] = [following_entry]
+            source["pages"].append(following_page)  # type: ignore[union-attr]
     units: dict[str, object] = {
         "schema_version": "1.0.0",
         "artifact_kind": "units",
@@ -261,6 +333,24 @@ def build_render_fixture(
             }
         ],
     }
+    if include_reference_page and include_reference_heading:
+        units["units"].append(  # type: ignore[union-attr]
+            {
+                "id": reference_heading_id,
+                "role": "heading",
+                "reading_order": 1,
+                "source_text": reference_heading_text,
+                "confidence_ppm": 990_000,
+                "fragments": [
+                    {
+                        "page_number": 2,
+                        "block_id": reference_heading_id,
+                        "source_char_start": 0,
+                        "source_char_end": len(reference_heading_text),
+                    }
+                ],
+            }
+        )
     translation: dict[str, object] = {
         "schema_version": "1.0.0",
         "artifact_kind": "translation",
@@ -276,6 +366,15 @@ def build_render_fixture(
             }
         ],
     }
+    if include_reference_page and include_reference_heading:
+        translation["units"].append(  # type: ignore[union-attr]
+            {
+                "unit_id": reference_heading_id,
+                "chinese_text": reference_heading_chinese_text,
+                "spans": [],
+                "terminology": [],
+            }
+        )
     review: dict[str, object] = {
         "schema_version": "1.0.0",
         "artifact_kind": "review",
@@ -283,7 +382,14 @@ def build_render_fixture(
         "reviewer_role": "independent",
         "translator_id": "translator-agent",
         "reviewer_id": "reviewer-agent",
-        "reviewed_unit_ids": [unit_id],
+        "reviewed_unit_ids": [
+            unit_id,
+            *(
+                [reference_heading_id]
+                if include_reference_page and include_reference_heading
+                else []
+            ),
+        ],
         "issues": [],
         "final_status": "passed",
     }

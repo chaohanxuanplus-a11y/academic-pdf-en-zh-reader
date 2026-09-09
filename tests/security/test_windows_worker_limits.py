@@ -6,6 +6,7 @@ from __future__ import annotations
 import ctypes
 import json
 import os
+import stat
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -15,6 +16,7 @@ from academic_pdf_en_zh_reader.security import windows_worker
 from academic_pdf_en_zh_reader.security.input_copy import copy_untrusted_input
 from academic_pdf_en_zh_reader.security.limits import DEFAULT_LIMITS, WorkerLimits
 from academic_pdf_en_zh_reader.security.windows_worker import (
+    SandboxCleanupError,
     SandboxUnavailableError,
     WorkerCpuLimitError,
     WorkerExecutionError,
@@ -108,12 +110,24 @@ def test_minimal_python_runtime_is_content_addressed_and_excludes_tooling(
     tmp_path: Path,
 ) -> None:
     runtime = windows_worker._copy_minimal_python_runtime(tmp_path)
-    source, manifest, fingerprint = windows_worker._python_runtime_manifest()
+    source, manifest, _source_fingerprint = windows_worker._python_runtime_manifest()
+    path_config_relative = Path(
+        f"python{windows_worker.sys.version_info.major}"
+        f"{windows_worker.sys.version_info.minor}._pth"
+    )
+    path_config = runtime.root / path_config_relative
+    path_config_size = path_config.stat().st_size
+    path_config_hash = windows_worker._file_sha256(path_config)
 
     assert runtime.source == source
-    assert runtime.fingerprint == fingerprint
-    assert runtime.file_count == len(manifest)
-    assert runtime.total_bytes == sum(size for _path, size, _digest in manifest)
+    assert runtime.fingerprint == windows_worker._runtime_manifest_fingerprint(
+        (*manifest, (path_config_relative, path_config_size, path_config_hash))
+    )
+    assert runtime.file_count == len(manifest) + 1
+    assert runtime.total_bytes == (
+        sum(size for _path, size, _digest in manifest) + path_config_size
+    )
+    assert path_config.read_bytes() == b"Lib\nDLLs\n"
     assert (runtime.root / "python.exe").is_file()
     assert (runtime.root / "python312.dll").is_file()
     assert (runtime.root / "Lib" / "json" / "__init__.py").is_file()
@@ -380,6 +394,325 @@ def test_unrestricted_token_branch_passes_required_restricting_sids(
     assert bool(captured["restricting_sids"])
 
 
+def test_lpac_workspace_dacl_is_limited_to_user_and_specific_package() -> None:
+    appcontainer_sid = "S-1-15-2-1234"
+    sddl = windows_worker._appcontainer_workspace_sddl(
+        "S-1-5-21-1234-1001",
+        appcontainer_sid,
+    )
+
+    assert f"(A;OICI;0x1301ff;;;{appcontainer_sid})" in sddl
+    worker_mask = 0x1301FF
+    assert worker_mask & 0x1FF == 0x1FF
+    assert worker_mask & 0x10000
+    assert worker_mask & 0x20000
+    assert worker_mask & 0x100000
+    assert worker_mask & (0x40000 | 0x80000) == 0
+    assert f"(D;;SD;;;{appcontainer_sid})" in sddl
+    assert f"(A;OICI;FA;;;{appcontainer_sid})" not in sddl
+    assert ";;;S-1-15-2-1)" not in sddl
+    assert ";;;S-1-15-2-2)" not in sddl
+
+
+def test_cleanup_error_replaces_and_chains_the_active_worker_error() -> None:
+    primary = WorkerExecutionError("primary worker failure")
+
+    with pytest.raises(SandboxCleanupError, match="workspace cleanup failed") as caught:
+        windows_worker._raise_cleanup_error(
+            ["workspace cleanup failed"],
+            active_error=primary,
+        )
+
+    assert caught.value.__cause__ is primary
+
+
+def test_cleanup_lstat_failure_is_not_treated_as_absence(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+
+    def deny_lstat(_path: Path) -> os.stat_result:
+        raise PermissionError("simulated ACL denial")
+
+    monkeypatch.setattr(Path, "lstat", deny_lstat)
+
+    errors = windows_worker._remove_tree_and_verify(
+        workspace,
+        label="AppContainer workspace",
+    )
+
+    assert errors == ["AppContainer workspace inspection failed: simulated ACL denial"]
+
+
+def test_cleanup_removes_worker_created_readonly_files(tmp_path: Path) -> None:
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    readonly = workspace / "attacker-readonly.bin"
+    readonly.write_bytes(b"residual")
+    readonly.chmod(stat.S_IREAD)
+    assert readonly.lstat().st_file_attributes & 0x00000001
+
+    errors = windows_worker._remove_tree_and_verify(
+        workspace,
+        label="AppContainer workspace",
+    )
+
+    assert errors == []
+    with pytest.raises(FileNotFoundError):
+        workspace.lstat()
+
+
+def test_appcontainer_cleanup_retries_profile_delete_after_native_fallback(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    profile_folder = tmp_path / "profile"
+    workspace = profile_folder / "workspace"
+    workspace.mkdir(parents=True)
+    (workspace / "residual.bin").write_bytes(b"residual")
+    events: list[str] = []
+    delete_results = iter((-2147024891, 0))
+    original_remove = windows_worker._remove_tree_and_verify
+
+    def delete_profile(_profile_name: str) -> int:
+        events.append("delete-profile")
+        return next(delete_results)
+
+    def remove_tree(path: Path, *, label: str) -> list[str]:
+        events.append(f"remove:{label}")
+        return original_remove(path, label=label)
+
+    monkeypatch.setattr(
+        windows_worker._userenv,
+        "DeleteAppContainerProfile",
+        delete_profile,
+    )
+    monkeypatch.setattr(windows_worker, "_remove_tree_and_verify", remove_tree)
+
+    errors, profile_deleted = windows_worker._cleanup_appcontainer_profile(
+        "academicpdfworker.test",
+        profile_folder=profile_folder,
+        workspace=workspace,
+    )
+
+    assert errors == []
+    assert profile_deleted is True
+    assert events == [
+        "delete-profile",
+        "remove:AppContainer workspace",
+        "remove:AppContainer profile folder",
+        "delete-profile",
+    ]
+
+
+def test_appcontainer_cleanup_requires_profile_api_success_even_if_paths_are_gone(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    profile_folder = tmp_path / "profile"
+    workspace = profile_folder / "workspace"
+    workspace.mkdir(parents=True)
+    delete_results = iter((-2147024891, -2147024891))
+
+    monkeypatch.setattr(
+        windows_worker._userenv,
+        "DeleteAppContainerProfile",
+        lambda _profile_name: next(delete_results),
+    )
+
+    errors, profile_deleted = windows_worker._cleanup_appcontainer_profile(
+        "academicpdfworker.test",
+        profile_folder=profile_folder,
+        workspace=workspace,
+    )
+
+    assert profile_deleted is False
+    assert errors == [
+        "DeleteAppContainerProfile attempt 1 failed (HRESULT 0x80070005)",
+        "DeleteAppContainerProfile attempt 2 failed (HRESULT 0x80070005)",
+    ]
+    with pytest.raises(FileNotFoundError):
+        profile_folder.lstat()
+    with pytest.raises(FileNotFoundError):
+        workspace.lstat()
+
+
+@pytest.mark.parametrize("remaining_root", ["profile", "workspace"])
+def test_appcontainer_cleanup_requires_every_exact_root_to_be_absent(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    remaining_root: str,
+) -> None:
+    profile_folder = tmp_path / "profile"
+    workspace = tmp_path / "workspace"
+    if remaining_root == "profile":
+        profile_folder.mkdir()
+    else:
+        workspace.mkdir()
+
+    monkeypatch.setattr(
+        windows_worker._userenv,
+        "DeleteAppContainerProfile",
+        lambda _profile_name: 0,
+    )
+
+    errors, profile_deleted = windows_worker._cleanup_appcontainer_profile(
+        "academicpdfworker.test",
+        profile_folder=profile_folder,
+        workspace=workspace,
+    )
+
+    assert profile_deleted is True
+    expected_label = (
+        "AppContainer profile folder"
+        if remaining_root == "profile"
+        else "AppContainer workspace"
+    )
+    assert errors == [f"{expected_label} still exists after profile cleanup"]
+
+
+def test_job_cleanup_terminates_then_waits_for_zero_active_processes(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[str] = []
+    active_processes = iter((1, 0))
+
+    def terminate(_job: object, _exit_code: int) -> bool:
+        calls.append("terminate")
+        return True
+
+    def wait(_process: object, _timeout_ms: int) -> int:
+        calls.append("wait")
+        return 0
+
+    def query(
+        _job: object,
+        information_class: int,
+        information: object,
+        _size: int,
+        returned: object,
+    ) -> bool:
+        calls.append("query")
+        assert information_class == 1
+        accounting = ctypes.cast(
+            information,
+            ctypes.POINTER(windows_worker._JOBOBJECT_BASIC_ACCOUNTING_INFORMATION),
+        )
+        accounting.contents.ActiveProcesses = next(active_processes)
+        returned_size = ctypes.cast(
+            returned,
+            ctypes.POINTER(windows_worker.wintypes.DWORD),
+        )
+        returned_size.contents.value = ctypes.sizeof(
+            windows_worker._JOBOBJECT_BASIC_ACCOUNTING_INFORMATION
+        )
+        return True
+
+    monkeypatch.setattr(windows_worker._kernel32, "TerminateJobObject", terminate)
+    monkeypatch.setattr(windows_worker._kernel32, "WaitForSingleObject", wait)
+    monkeypatch.setattr(windows_worker._kernel32, "QueryInformationJobObject", query)
+    monkeypatch.setattr(windows_worker.time, "sleep", lambda _seconds: None)
+
+    assert windows_worker._terminate_job_and_wait(111, 222) == []
+    assert calls == ["terminate", "wait", "query", "query"]
+
+
+def test_production_worker_rejects_a_multi_process_job_limit(
+    workspace: Path,
+) -> None:
+    request = WorkerRequest(
+        operation="preflight",
+        input_path="input.pdf",
+        parameters={
+            "policy_version": "1.0.0",
+            "source_sha256": "a" * 64,
+            "input_bytes": 16,
+        },
+    )
+
+    with pytest.raises(SandboxUnavailableError, match="exactly one"):
+        windows_worker._run_restricted_worker_for_test(
+            request,
+            workspace,
+            limits=WorkerLimits(active_process_limit=2),
+        )
+
+
+def test_lpac_token_query_treats_unsupported_class_as_unavailable(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class UnsupportedTokenInformation:
+        def GetTokenInformation(self, *_args: object) -> bool:
+            ctypes.set_last_error(87)
+            return False
+
+    monkeypatch.setattr(
+        windows_worker,
+        "_advapi32",
+        UnsupportedTokenInformation(),
+    )
+
+    assert windows_worker._token_lpac_status(windows_worker.wintypes.HANDLE(123)) == (
+        None,
+        False,
+    )
+
+
+@pytest.mark.parametrize(
+    ("lpac_status", "query_supported", "expected"),
+    (
+        (True, True, True),
+        (False, True, False),
+        (None, False, True),
+    ),
+)
+def test_zero_capability_child_contract_uses_class_46_when_supported(
+    monkeypatch: pytest.MonkeyPatch,
+    lpac_status: bool | None,
+    query_supported: bool,
+    expected: bool,
+) -> None:
+    monkeypatch.setattr(
+        windows_worker,
+        "_current_process_security",
+        lambda: (False, [], True, 0),
+    )
+    monkeypatch.setattr(
+        windows_worker,
+        "_current_process_lpac_status",
+        lambda: (lpac_status, query_supported),
+    )
+
+    assert (
+        windows_worker._current_process_has_zero_capability_appcontainer() is expected
+    )
+
+
+@pytest.mark.parametrize(
+    ("appcontainer", "capability_count"),
+    ((False, 0), (True, 1)),
+)
+def test_lpac_child_contract_rejects_wrong_token_shape_before_class_46(
+    monkeypatch: pytest.MonkeyPatch,
+    appcontainer: bool,
+    capability_count: int,
+) -> None:
+    monkeypatch.setattr(
+        windows_worker,
+        "_current_process_security",
+        lambda: (False, [], appcontainer, capability_count),
+    )
+    monkeypatch.setattr(
+        windows_worker,
+        "_current_process_lpac_status",
+        lambda: (_ for _ in ()).throw(AssertionError("class 46 was queried")),
+    )
+
+    assert windows_worker._current_process_has_zero_capability_appcontainer() is False
+
+
 def test_ordinary_token_dispatch_does_not_depend_on_restricted_parent(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -469,10 +802,15 @@ def test_create_process_failure_is_fail_closed_and_closes_handles(
     assert after <= before + 1
 
 
+@pytest.mark.parametrize(
+    "report_terminate_failure",
+    [False, True],
+)
 def test_job_assignment_failure_terminates_unassigned_suspended_process(
     workspace: Path,
     monkeypatch: pytest.MonkeyPatch,
     restricted_job_adapter: None,
+    report_terminate_failure: bool,
 ) -> None:
     run_worker(_request("inspect"), workspace)
     before = windows_worker._current_process_handle_count()
@@ -494,7 +832,11 @@ def test_job_assignment_failure_terminates_unassigned_suspended_process(
 
     def track_terminate(process: object, exit_code: int) -> bool:
         terminated.append((windows_worker._handle_value(process), exit_code))
-        return bool(original_terminate(process, exit_code))
+        terminated_ok = bool(original_terminate(process, exit_code))
+        if report_terminate_failure:
+            ctypes.set_last_error(5)
+            return False
+        return terminated_ok
 
     def track_wait(process: object, timeout_ms: int) -> int:
         result = int(original_wait(process, timeout_ms))
@@ -514,7 +856,7 @@ def test_job_assignment_failure_terminates_unassigned_suspended_process(
     monkeypatch.setattr(windows_worker._kernel32, "WaitForSingleObject", track_wait)
     monkeypatch.setattr(windows_worker.subprocess, "Popen", forbidden_fallback)
 
-    with pytest.raises(SandboxUnavailableError, match="AssignProcessToJobObject"):
+    with pytest.raises(SandboxUnavailableError) as caught:
         run_worker(_request("inspect"), workspace)
 
     after = windows_worker._current_process_handle_count()
@@ -522,6 +864,109 @@ def test_job_assignment_failure_terminates_unassigned_suspended_process(
     assert len(terminated) == 1
     assert terminated[0][1] == 1
     assert waits == [(terminated[0][0], 5000, 0)]
+    assert after == before
+    assert "AssignProcessToJobObject" in str(caught.value)
+
+
+def test_direct_process_cleanup_retries_until_exit_is_confirmed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    terminate_results = iter((False, True))
+    wait_results = iter((258, 0))
+    terminate_calls: list[tuple[object, int]] = []
+
+    def terminate(process: object, exit_code: int) -> bool:
+        terminate_calls.append((process, exit_code))
+        ctypes.set_last_error(5)
+        return next(terminate_results)
+
+    monkeypatch.setattr(windows_worker._kernel32, "TerminateProcess", terminate)
+    monkeypatch.setattr(
+        windows_worker._kernel32,
+        "WaitForSingleObject",
+        lambda _process, _timeout_ms: next(wait_results),
+    )
+
+    errors, confirmed = windows_worker._terminate_process_and_wait(
+        object(),
+        label="test child",
+    )
+
+    assert errors == []
+    assert confirmed is True
+    assert len(terminate_calls) == 2
+
+
+def test_direct_process_cleanup_reports_persistent_termination_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def fail_terminate(_process: object, _exit_code: int) -> bool:
+        ctypes.set_last_error(5)
+        return False
+
+    monkeypatch.setattr(
+        windows_worker._kernel32,
+        "TerminateProcess",
+        fail_terminate,
+    )
+    monkeypatch.setattr(
+        windows_worker._kernel32,
+        "WaitForSingleObject",
+        lambda _process, _timeout_ms: 258,
+    )
+
+    errors, confirmed = windows_worker._terminate_process_and_wait(
+        object(),
+        label="test child",
+    )
+
+    assert confirmed is False
+    assert len(errors) == 4
+    assert "TerminateProcess(test child) attempt 1" in errors[0]
+    assert "WaitForSingleObject(test child) attempt 2" in errors[-1]
+
+
+def test_final_cleanup_retries_an_unassigned_suspended_process(
+    workspace: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    restricted_job_adapter: None,
+) -> None:
+    run_worker(_request("inspect"), workspace)
+    before = windows_worker._current_process_handle_count()
+    original_cleanup = windows_worker._terminate_process_and_wait
+    cleanup_calls = 0
+
+    def fail_assignment(_job: object, _process: object) -> bool:
+        ctypes.set_last_error(5)
+        return False
+
+    def staged_cleanup(
+        process: object,
+        *,
+        label: str,
+    ) -> tuple[list[str], bool]:
+        nonlocal cleanup_calls
+        cleanup_calls += 1
+        if cleanup_calls == 1:
+            return ["initial termination attempts failed"], False
+        return original_cleanup(process, label=label)
+
+    monkeypatch.setattr(
+        windows_worker._kernel32,
+        "AssignProcessToJobObject",
+        fail_assignment,
+    )
+    monkeypatch.setattr(
+        windows_worker,
+        "_terminate_process_and_wait",
+        staged_cleanup,
+    )
+
+    with pytest.raises(SandboxUnavailableError, match="AssignProcessToJobObject"):
+        run_worker(_request("inspect"), workspace)
+
+    after = windows_worker._current_process_handle_count()
+    assert cleanup_calls == 2
     assert after == before
 
 
@@ -584,6 +1029,7 @@ def test_appcontainer_create_process_failure_has_no_weaker_launcher_fallback(
         return SimpleNamespace(
             attribute_list=windows_worker.wintypes.LPVOID(1),
             inherited_handle_values=(1, 2, 3),
+            all_application_packages_policy=windows_worker.wintypes.DWORD(1),
             cleanup=cleanup,
         )
 
@@ -762,7 +1208,7 @@ def test_repeated_output_limit_failures_do_not_accumulate_handles(
 
 
 @pytest.mark.parametrize(
-    ("noted_case", "failed_check"),
+    ("cleanup_failure_case", "failed_check"),
     [
         ("sleep", "wall_clock_limit"),
         ("busy_loop", "cpu_time_limit"),
@@ -770,14 +1216,16 @@ def test_repeated_output_limit_failures_do_not_accumulate_handles(
         ("oversize_output", "bounded_versioned_json"),
     ],
 )
-def test_probe_rejects_expected_limit_with_cleanup_failure_note(
+def test_probe_rejects_expected_limit_with_cleanup_failure(
     monkeypatch: pytest.MonkeyPatch,
-    noted_case: str,
+    cleanup_failure_case: str,
     failed_check: str,
 ) -> None:
     def expected_error(error: WorkerExecutionError, case: str) -> None:
-        if noted_case == case:
-            error.add_note("simulated AppContainer cleanup failure")
+        if cleanup_failure_case == case:
+            raise SandboxCleanupError(
+                "simulated AppContainer cleanup failure"
+            ) from error
         raise error
 
     def fake_worker(
@@ -789,12 +1237,15 @@ def test_probe_rejects_expected_limit_with_cleanup_failure_note(
         case = str(request.parameters.get("case"))
         provenance: dict[str, object] = {
             "appcontainer_cleanup_verified": True,
+            "appcontainer_lpac_policy_applied": True,
         }
         result: dict[str, object] = {}
         if case == "inspect":
             result = {
                 "appcontainer": True,
                 "capability_count": 0,
+                "less_privileged_appcontainer": None,
+                "less_privileged_appcontainer_query_supported": False,
                 "restricted_token": True,
                 "enabled_privileges": [],
             }
@@ -851,10 +1302,10 @@ def test_probe_rejects_expected_limit_with_cleanup_failure_note(
 
     assert probe["passed"] is False
     assert probe["minimum_contract"][failed_check] is False
+    assert probe["minimum_contract"]["less_privileged_appcontainer"] is True
     assert probe["minimum_contract"]["appcontainer_cleanup"] is False
     assert any(
-        f"{failed_check} teardown failed: simulated AppContainer cleanup failure"
-        in error
+        "SandboxCleanupError: simulated AppContainer cleanup failure" in error
         for error in probe["errors"]
     ), probe["errors"][0] if probe["errors"] else repr(probe)
 
@@ -875,22 +1326,72 @@ def test_invalid_worker_output_is_rejected(
 def test_full_security_probe_is_truthful_and_fail_closed() -> None:
     probe = run_security_probe()
 
+    print(json.dumps(probe, ensure_ascii=False, indent=2, sort_keys=True))
     first_error = probe["errors"][0] if probe["errors"] else repr(probe)
     assert probe["minimum_contract"]["sha256_recomputed"] is True, first_error
     assert probe["minimum_contract"]["copy_size_verified"] is True, first_error
     assert probe["provenance"]["subprocess_fallback"] is False
-    profile_blocked = any(
-        "CreateAppContainerProfile" in error and "0x80070002" in error
-        for error in probe["errors"]
+    if probe["passed"] is not True:
+        pytest.fail("security probe failed; full report is above", pytrace=False)
+    assert all(probe["minimum_contract"].values())
+    assert probe["minimum_contract"]["less_privileged_appcontainer"] is True
+    assert probe["provenance"]["appcontainer_implemented"] is True
+    assert probe["provenance"]["appcontainer_lpac"] is True
+    assert probe["provenance"]["network_isolation_implemented"] is True
+
+
+def test_appcontainer_process_attributes_apply_lpac_opt_out(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    updates: list[tuple[int, int | None]] = []
+
+    class FakeKernel32:
+        def InitializeProcThreadAttributeList(
+            self,
+            attribute_list: object,
+            count: int,
+            _flags: int,
+            size: object,
+        ) -> bool:
+            assert count == 3
+            size._obj.value = 512  # type: ignore[attr-defined]
+            return attribute_list is not None
+
+        def UpdateProcThreadAttribute(
+            self,
+            _attribute_list: object,
+            _flags: int,
+            attribute: int,
+            value: object,
+            _size: int,
+            _previous: object,
+            _return_size: object,
+        ) -> bool:
+            policy = None
+            if attribute == 0x0002000F:
+                policy = ctypes.cast(
+                    value,
+                    ctypes.POINTER(windows_worker.wintypes.DWORD),
+                ).contents.value
+            updates.append((attribute, policy))
+            return True
+
+        def DeleteProcThreadAttributeList(self, _attributes: object) -> None:
+            return None
+
+    monkeypatch.setattr(windows_worker, "_kernel32", FakeKernel32())
+    appcontainer = SimpleNamespace(sid=windows_worker.wintypes.LPVOID(1234))
+
+    attributes = windows_worker._prepare_process_attributes(
+        (windows_worker.wintypes.HANDLE(1),) * 3,
+        appcontainer,
     )
-    if profile_blocked:
-        assert probe["passed"] is False
-        assert probe["provenance"]["appcontainer_api_available"] is True
-        assert probe["provenance"]["appcontainer_launch_verified"] is False
-    else:
-        if probe["passed"] is not True:
-            print(json.dumps(probe, ensure_ascii=False, indent=2, sort_keys=True))
-            pytest.fail("security probe failed; full report is above", pytrace=False)
-        assert all(probe["minimum_contract"].values())
-        assert probe["provenance"]["appcontainer_implemented"] is True
-        assert probe["provenance"]["network_isolation_implemented"] is True
+    try:
+        assert updates == [
+            (0x00020002, None),
+            (0x00020009, None),
+            (0x0002000F, 1),
+        ]
+        assert getattr(attributes, "all_application_packages_policy", None) is not None
+    finally:
+        attributes.cleanup()

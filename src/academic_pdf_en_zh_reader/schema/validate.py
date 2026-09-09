@@ -307,7 +307,13 @@ def _validate_render_manifest(instance: dict[str, Any]) -> None:
     pages = instance["pages"]
     if [page["output_page_number"] for page in pages] != list(range(1, len(pages) + 1)):
         raise SchemaValidationError("render-manifest output pages must be contiguous")
-    for page in pages:
+    for page_index, page in enumerate(pages):
+        if page["page_kind"] == "disclaimer":
+            if page_index != len(pages) - 1 or len(pages) < 2:
+                raise SchemaValidationError(
+                    "render-manifest disclaimer must be the sole final synthetic page"
+                )
+            continue
         _positive_box(page["source_crop_box_mpt"], label="source crop box")
         _positive_box(
             page["source_normalized_visible_box_mpt"],
@@ -334,7 +340,11 @@ def _validate_render_manifest(instance: dict[str, Any]) -> None:
             raise SchemaValidationError(
                 "render-manifest continuation page evidence is inconsistent"
             )
-    output_pages = {page["output_page_number"] for page in pages}
+    output_pages = {
+        page["output_page_number"]
+        for page in pages
+        if page["page_kind"] != "disclaimer"
+    }
     block_ids: set[str] = set()
     for block in instance["block_mappings"]:
         _positive_box(block["bbox_mpt"], label="rendered block")

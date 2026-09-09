@@ -43,7 +43,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     if arguments.ttl_seconds is not None and not arguments.retain_debug:
         parser.error("--ttl-seconds requires --retain-debug")
     try:
-        finish_managed_job(
+        result = finish_managed_job(
             managed_root=arguments.managed_root,
             job_id=arguments.job_id,
             source_pdf=arguments.source_pdf,
@@ -57,6 +57,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     except FinishJobError as exc:
         print(f"FINISH_ERROR {exc.stage} {exc.code}", file=sys.stderr)
         return 2
+    if "DISCLAIMER_PAGE_APPENDED" in result.get("notices", []):
+        print("原末页无足够安全空间，已在文件末尾追加责任声明页。")
     return 0
 
 

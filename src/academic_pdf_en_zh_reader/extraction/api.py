@@ -88,6 +88,7 @@ def _run_platform_worker(
     if os.name != "nt":
         raise _StableBridgeError("SANDBOX_UNAVAILABLE")
     from academic_pdf_en_zh_reader.security.windows_worker import (
+        SandboxCleanupError,
         SandboxUnavailableError,
         WorkerCpuLimitError,
         WorkerExecutionError,
@@ -108,6 +109,8 @@ def _run_platform_worker(
         }:
             raise _StableBridgeError(error.code) from error
         raise _StableBridgeError("WORKER_FAILED") from error
+    except SandboxCleanupError as error:
+        raise _StableBridgeError("SANDBOX_CONTRACT_UNVERIFIED") from error
     except SandboxUnavailableError as error:
         raise _StableBridgeError("SANDBOX_UNAVAILABLE") from error
     except (

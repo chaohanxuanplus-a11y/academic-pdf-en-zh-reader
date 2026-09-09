@@ -305,7 +305,9 @@ def test_vector_overlay_and_a3_composition_are_exact_and_deterministic(
             == plan["pages"][mapping["output_page_number"] - 1]["page_plan_hash"]
         )
     extracted = [page.extract_text() or "" for page in reader.pages]
-    assert all("Key scientific term in context." in text for text in extracted)
+    assert all("Key scientific term in context." in text for text in extracted[:-1])
+    assert "Key scientific term in context." not in extracted[-1]
+    assert "责任声明" in extracted[-1]
     assert any("甲" in text for text in extracted)
     assert any(mapping["page_kind"] == "continuation" for mapping in manifest["pages"])
     assert {"/OpenAction", "/AA", "/AcroForm", "/Names"}.isdisjoint(reader.root_object)
@@ -317,6 +319,36 @@ def test_vector_overlay_and_a3_composition_are_exact_and_deterministic(
         for _operands, operator in page.get_contents().operations
     }
     assert {b"Tj", b"S"} <= operators
+
+
+def test_appended_disclaimer_has_no_source_page_and_preserves_original_pdf(
+    tmp_path: Path,
+) -> None:
+    result, output, manifest_path, artifacts, plan, *_rest = _compose(tmp_path)
+    reader = PdfReader(output, strict=True)
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+
+    assert result.page_count == len(artifacts[6]["pages"]) + 1
+    assert len(reader.pages) == len(manifest["pages"]) == result.page_count
+    assert plan["branding"]["appended_page_number"] == result.page_count
+    mapping = manifest["pages"][-1]
+    assert mapping["page_kind"] == "disclaimer"
+    assert mapping["source_page_number"] is None
+    assert mapping["source_crop_box_mpt"] is None
+    assert mapping["source_normalized_visible_box_mpt"] is None
+    assert mapping["source_rotation_degrees"] is None
+    assert mapping["source_transform_mpt"] is None
+    assert mapping["continuation_label_present"] is False
+    assert "Key scientific term in context." in reader.pages[0].extract_text()
+    text = reader.pages[-1].extract_text()
+    assert "Key scientific term in context." not in text
+    assert "责任声明" in text
+    assert "已追加本声明页" in text
+    assert "本项目不提供、下载、托管或自动发布论文" in "".join(text.split())
+    assert all(
+        block["output_page_number"] < result.page_count
+        for block in manifest["block_mappings"]
+    )
 
 
 def test_passive_source_annotations_are_stripped_by_the_fixed_policy(
@@ -354,7 +386,8 @@ def test_rotated_and_nonzero_crop_sources_preserve_exact_one_to_one_geometry(
     )
 
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-    [mapping] = manifest["pages"]
+    [mapping] = manifest["pages"][:-1]
+    assert manifest["pages"][-1]["page_kind"] == "disclaimer"
     assert mapping["source_rotation_degrees"] == rotation_degrees
     assert mapping["source_transform_mpt"][:4] == [1000, 0, 0, 1000]
     assert mapping["source_transform_mpt"][4:] == expected_translation

@@ -16,7 +16,7 @@ from academic_pdf_en_zh_reader.layout.solver import (
 from academic_pdf_en_zh_reader.rendering.branding import (
     freeze_brand_block,
     load_brand_manifest,
-    select_reference_only_page,
+    reference_only_regions,
 )
 from academic_pdf_en_zh_reader.rendering.contracts import (
     DEFAULT_OVERLAY_PLAN_LIMITS,
@@ -648,7 +648,14 @@ def build_overlay_plan(
     source_pages, source_blocks, source_bands = _source_indexes(source)
     continuation_header = _continuation_header(frame_graph)
     brand_manifest, _brand_asset_path, brand_manifest_sha256 = load_brand_manifest()
-    branded_page_number = select_reference_only_page(source, layout)
+    brand_layout = brand_manifest["layout"]
+    brand_regions = reference_only_regions(
+        source,
+        layout,
+        page_margin_mpt=int(brand_layout["page_margin_mpt"]),
+        heading_gap_mpt=int(brand_layout["section_gap_mpt"]),
+    )
+    branded_page_number = None
 
     total_lines = 0
     total_characters = 0
@@ -657,7 +664,7 @@ def build_overlay_plan(
     total_leaders = 0
     total_selected_anchors = 0
     pages: list[dict[str, object]] = []
-    for page in layout_pages:
+    for page_index, page in enumerate(layout_pages):
         continuation_label = _validate_continuation_label(
             page,
             header=continuation_header,
@@ -708,15 +715,24 @@ def build_overlay_plan(
         line_bindings = [*header_bindings, *line_bindings]
         draw_runs = [*header_runs, *draw_runs]
         brand_block = None
-        if int(page["page_number"]) == branded_page_number:
-            brand_block, brand_bindings, brand_runs = freeze_brand_block(
+        brand_region = brand_regions.get(int(page["page_number"]))
+        if (
+            page_index == len(layout_pages) - 1
+            and branded_page_number is None
+            and brand_region is not None
+        ):
+            frozen_brand = freeze_brand_block(
                 output_page_number=int(page["page_number"]),
                 start_draw_order=len(draw_runs),
                 manifest=brand_manifest,
                 manifest_sha256=brand_manifest_sha256,
+                available_y_mpt=brand_region,
             )
-            line_bindings.extend(brand_bindings)
-            draw_runs.extend(brand_runs)
+            if frozen_brand is not None:
+                brand_block, brand_bindings, brand_runs = frozen_brand
+                branded_page_number = int(page["page_number"])
+                line_bindings.extend(brand_bindings)
+                draw_runs.extend(brand_runs)
         total_draw_runs += len(draw_runs)
         _complexity(total_draw_runs, limits.max_draw_runs, "draw runs")
         requests = _leader_requests(
@@ -761,6 +777,49 @@ def build_overlay_plan(
         page_plan["page_plan_hash"] = sha256_canonical(page_plan)
         pages.append(page_plan)
 
+    appended_page_number = None
+    if branded_page_number is None:
+        appended_page_number = len(pages) + 1
+        _complexity(appended_page_number, limits.max_pages, "pages")
+        frozen_brand = freeze_brand_block(
+            output_page_number=appended_page_number,
+            start_draw_order=0,
+            manifest=brand_manifest,
+            manifest_sha256=brand_manifest_sha256,
+            dedicated_page=True,
+        )
+        if frozen_brand is None:
+            raise OverlayPlanError(
+                "BRAND_LAYOUT_INVALID", "disclaimer page does not fit"
+            )
+        brand_block, brand_bindings, brand_runs = frozen_brand
+        _complexity(total_lines + len(brand_bindings), limits.max_lines, "lines")
+        _complexity(
+            total_characters + sum(len(str(run["text"])) for run in brand_runs),
+            limits.max_characters,
+            "characters",
+        )
+        _complexity(
+            total_draw_runs + len(brand_runs), limits.max_draw_runs, "draw runs"
+        )
+        disclaimer_page: dict[str, object] = {
+            "page_number": appended_page_number,
+            "source_page_number": None,
+            "page_kind": "disclaimer",
+            "continuation_index": 0,
+            "continuation_label": None,
+            "brand_block": brand_block,
+            "source_obstacle_count": 0,
+            "source_obstacles_hash": sha256_canonical([]),
+            "line_bindings": brand_bindings,
+            "draw_runs": brand_runs,
+            "underlines": [],
+            "leader_routes": [],
+        }
+        disclaimer_page["page_plan_hash"] = sha256_canonical(disclaimer_page)
+        pages.append(disclaimer_page)
+        branded_page_number = appended_page_number
+
     plan: dict[str, object] = {
         "overlay_plan_version": OVERLAY_PLAN_VERSION,
         "artifact_kind": "overlay-plan",
@@ -779,6 +838,7 @@ def build_overlay_plan(
             "asset_sha256": brand_manifest["image"]["sha256"],
             "policy_version": brand_manifest["layout"]["policy_version"],
             "rendered_page_number": branded_page_number,
+            "appended_page_number": appended_page_number,
         },
         "pages": pages,
     }

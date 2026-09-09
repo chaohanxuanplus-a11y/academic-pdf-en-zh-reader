@@ -9,6 +9,7 @@ import ctypes
 import hashlib
 import json
 import os
+import re
 import secrets
 import shutil
 import socket
@@ -19,7 +20,7 @@ import sysconfig
 import tempfile
 import threading
 import time
-from collections.abc import Mapping
+from collections.abc import Iterable, Mapping
 from contextlib import suppress
 from dataclasses import dataclass, fields, replace
 from pathlib import Path
@@ -42,6 +43,12 @@ from .worker_protocol import (
     NORMALIZATION_PDF_PATH,
     NORMALIZATION_PREFLIGHT_PATH,
     PREFLIGHT_ARTIFACT_PATH,
+    QA_ARTIFACT_PATH,
+    QA_CANDIDATE_PATH,
+    QA_HANDOFF_PATH,
+    RENDER_HANDOFF_PATH,
+    RENDER_MANIFEST_PATH,
+    RENDER_PDF_PATH,
     ProtocolError,
     WorkerRequest,
     WorkerResponse,
@@ -60,6 +67,10 @@ class SandboxUnavailableError(RuntimeError):
 
 class WorkerExecutionError(RuntimeError):
     """The isolated worker did not return a valid successful result."""
+
+
+class SandboxCleanupError(WorkerExecutionError):
+    """The isolated worker's security-sensitive resources were not cleaned up."""
 
 
 class WorkerReportedError(WorkerExecutionError):
@@ -103,6 +114,9 @@ class WorkerRunResult:
     artifact_bytes: bytes | None = None
     normalized_pdf_bytes: bytes | None = None
     normalization_artifact_bytes: bytes | None = None
+    render_pdf_bytes: bytes | None = None
+    render_manifest_bytes: bytes | None = None
+    qa_artifact_bytes: bytes | None = None
 
 
 if os.name == "nt":
@@ -195,6 +209,18 @@ if os.name == "nt":
             ("SchedulingClass", wintypes.DWORD),
         ]
 
+    class _JOBOBJECT_BASIC_ACCOUNTING_INFORMATION(ctypes.Structure):
+        _fields_ = [
+            ("TotalUserTime", ctypes.c_longlong),
+            ("TotalKernelTime", ctypes.c_longlong),
+            ("ThisPeriodTotalUserTime", ctypes.c_longlong),
+            ("ThisPeriodTotalKernelTime", ctypes.c_longlong),
+            ("TotalPageFaultCount", wintypes.DWORD),
+            ("TotalProcesses", wintypes.DWORD),
+            ("ActiveProcesses", wintypes.DWORD),
+            ("TotalTerminatedProcesses", wintypes.DWORD),
+        ]
+
     class _IO_COUNTERS(ctypes.Structure):
         _fields_ = [
             ("ReadOperationCount", ctypes.c_ulonglong),
@@ -219,6 +245,15 @@ if os.name == "nt":
         _fields_ = [
             ("CompletionKey", wintypes.LPVOID),
             ("CompletionPort", wintypes.HANDLE),
+        ]
+
+    class _FILE_BASIC_INFO(ctypes.Structure):
+        _fields_ = [
+            ("CreationTime", ctypes.c_longlong),
+            ("LastAccessTime", ctypes.c_longlong),
+            ("LastWriteTime", ctypes.c_longlong),
+            ("ChangeTime", ctypes.c_longlong),
+            ("FileAttributes", wintypes.DWORD),
         ]
 
     _kernel32.GetCurrentProcess.restype = wintypes.HANDLE
@@ -287,6 +322,30 @@ if os.name == "nt":
     _kernel32.AssignProcessToJobObject.restype = wintypes.BOOL
     _kernel32.TerminateJobObject.argtypes = [wintypes.HANDLE, wintypes.UINT]
     _kernel32.TerminateJobObject.restype = wintypes.BOOL
+    _kernel32.CreateFileW.argtypes = [
+        wintypes.LPCWSTR,
+        wintypes.DWORD,
+        wintypes.DWORD,
+        wintypes.LPVOID,
+        wintypes.DWORD,
+        wintypes.DWORD,
+        wintypes.HANDLE,
+    ]
+    _kernel32.CreateFileW.restype = wintypes.HANDLE
+    _kernel32.GetFileInformationByHandleEx.argtypes = [
+        wintypes.HANDLE,
+        ctypes.c_int,
+        wintypes.LPVOID,
+        wintypes.DWORD,
+    ]
+    _kernel32.GetFileInformationByHandleEx.restype = wintypes.BOOL
+    _kernel32.SetFileInformationByHandle.argtypes = [
+        wintypes.HANDLE,
+        ctypes.c_int,
+        wintypes.LPVOID,
+        wintypes.DWORD,
+    ]
+    _kernel32.SetFileInformationByHandle.restype = wintypes.BOOL
     _kernel32.TerminateProcess.argtypes = [wintypes.HANDLE, wintypes.UINT]
     _kernel32.TerminateProcess.restype = wintypes.BOOL
     _kernel32.ResumeThread.argtypes = [wintypes.HANDLE]
@@ -481,6 +540,9 @@ _EVERYONE_SID = "S-1-1-0"
 _RESTRICTED_CODE_SID = "S-1-5-12"
 _PROC_THREAD_ATTRIBUTE_HANDLE_LIST = 0x00020002
 _PROC_THREAD_ATTRIBUTE_SECURITY_CAPABILITIES = 0x00020009
+_PROC_THREAD_ATTRIBUTE_ALL_APPLICATION_PACKAGES_POLICY = 0x0002000F
+_PROCESS_CREATION_ALL_APPLICATION_PACKAGES_OPT_OUT = 0x00000001
+_TOKEN_IS_LESS_PRIVILEGED_APPCONTAINER = 46
 _JOB_MESSAGE_NAMES = {
     1: "END_OF_JOB_TIME",
     2: "END_OF_PROCESS_TIME",
@@ -505,6 +567,7 @@ _PYTHON_RUNTIME_EXCLUDED_PARTS = {
 _PYTHON_RUNTIME_MANIFEST_CACHE: (
     tuple[Path, tuple[tuple[Path, int, str], ...], str] | None
 ) = None
+_PYTHON_ISOLATED_PATH_CONFIG = b"Lib\nDLLs\n"
 _PYPDF_VERSION = "6.16.2"
 _PYPDF_RUNTIME_MANIFEST_CACHE: (
     tuple[Path, tuple[tuple[Path, int, str], ...], str] | None
@@ -517,6 +580,30 @@ _EXTRACTION_DEPENDENCIES = (
     ("cffi", "2.1.1", ()),
 )
 _EXTRACTION_RUNTIME_MANIFEST_CACHE: (
+    tuple[Path, tuple[tuple[Path, int, str], ...], str] | None
+) = None
+_RENDERING_DEPENDENCIES = (
+    ("fonttools", "4.63.0", ("fontTools",)),
+    ("jsonschema", "4.26.0", ("jsonschema",)),
+    ("attrs", "26.1.0", ("attr", "attrs")),
+    (
+        "jsonschema-specifications",
+        "2025.9.1",
+        ("jsonschema_specifications",),
+    ),
+    ("referencing", "0.37.0", ("referencing",)),
+    ("rpds-py", "2026.6.3", ("rpds",)),
+    ("typing-extensions", "4.16.0", ("typing_extensions.py",)),
+    ("pillow", "12.3.0", ("PIL",)),
+    (
+        "pypdfium2",
+        "5.13.0",
+        ("pypdfium2", "pypdfium2_cfg", "pypdfium2_raw"),
+    ),
+    ("reportlab", "5.0.1", ("reportlab",)),
+    ("charset-normalizer", "3.5.1", ("charset_normalizer",)),
+)
+_RENDERING_RUNTIME_MANIFEST_CACHE: (
     tuple[Path, tuple[tuple[Path, int, str], ...], str] | None
 ) = None
 _PROJECT_RUNTIME_FILES = (
@@ -542,6 +629,191 @@ _PROJECT_RUNTIME_FILES = (
 )
 
 
+def _clear_windows_readonly_without_following(path: Path) -> None:
+    """Clear READONLY through a handle opened on the path entry itself."""
+
+    handle = _kernel32.CreateFileW(
+        str(path),
+        0x00000100,  # FILE_WRITE_ATTRIBUTES
+        0x00000001 | 0x00000002 | 0x00000004,
+        None,
+        3,  # OPEN_EXISTING
+        0x02000000 | 0x00200000,  # BACKUP_SEMANTICS | OPEN_REPARSE_POINT
+        None,
+    )
+    invalid_handle = ctypes.c_void_p(-1).value
+    if handle in (None, invalid_handle):
+        raise ctypes.WinError(ctypes.get_last_error())
+    try:
+        information = _FILE_BASIC_INFO()
+        if not _kernel32.GetFileInformationByHandleEx(
+            handle,
+            0,  # FileBasicInfo
+            ctypes.byref(information),
+            ctypes.sizeof(information),
+        ):
+            raise ctypes.WinError(ctypes.get_last_error())
+        if not information.FileAttributes & 0x00000001:
+            raise PermissionError("cleanup target is not marked read-only")
+        information.FileAttributes &= ~0x00000001
+        if information.FileAttributes == 0:
+            information.FileAttributes = 0x00000080  # FILE_ATTRIBUTE_NORMAL
+        if not _kernel32.SetFileInformationByHandle(
+            handle,
+            0,  # FileBasicInfo
+            ctypes.byref(information),
+            ctypes.sizeof(information),
+        ):
+            raise ctypes.WinError(ctypes.get_last_error())
+    finally:
+        _kernel32.CloseHandle(handle)
+
+
+def _retry_readonly_removal(
+    function: Any,
+    failed_path: str,
+    error: BaseException,
+) -> None:
+    if os.name != "nt" or not isinstance(error, PermissionError):
+        raise error
+    _clear_windows_readonly_without_following(Path(failed_path))
+    function(failed_path)
+
+
+def _remove_tree_and_verify(path: Path, *, label: str) -> list[str]:
+    """Remove one security-sensitive tree and verify absence with ``lstat``."""
+
+    errors: list[str] = []
+    try:
+        path.lstat()
+    except FileNotFoundError:
+        return errors
+    except OSError as error:
+        return [f"{label} inspection failed: {error}"]
+
+    try:
+        shutil.rmtree(path, onexc=_retry_readonly_removal)
+    except OSError as error:
+        errors.append(f"{label} cleanup failed: {error}")
+
+    try:
+        path.lstat()
+    except FileNotFoundError:
+        return errors
+    except OSError as error:
+        errors.append(f"{label} absence verification failed: {error}")
+    else:
+        errors.append(f"{label} still exists after cleanup")
+    return errors
+
+
+def _verify_tree_absent_after_profile_cleanup(path: Path, *, label: str) -> list[str]:
+    """Verify one exact cleanup root is absent without following reparse points."""
+
+    try:
+        path.lstat()
+    except FileNotFoundError:
+        return []
+    except OSError as error:
+        return [f"{label} absence verification failed: {error}"]
+    return [f"{label} still exists after profile cleanup"]
+
+
+def _delete_appcontainer_profile_attempt(
+    profile_name: str,
+    *,
+    attempt: int,
+) -> tuple[bool, str | None]:
+    try:
+        result = _userenv.DeleteAppContainerProfile(profile_name)
+    except Exception as error:
+        return (
+            False,
+            "DeleteAppContainerProfile "
+            f"attempt {attempt} raised {type(error).__name__}: {error}",
+        )
+    if result < 0:
+        return (
+            False,
+            "DeleteAppContainerProfile "
+            f"attempt {attempt} failed (HRESULT 0x{result & 0xFFFFFFFF:08X})",
+        )
+    return True, None
+
+
+def _cleanup_appcontainer_profile(
+    profile_name: str,
+    *,
+    profile_folder: Path | None,
+    workspace: Path | None,
+) -> tuple[list[str], bool]:
+    """Delete an AppContainer profile and prove its exact storage roots are gone."""
+
+    attempt_errors: list[str] = []
+    fallback_errors: list[str] = []
+    profile_deleted, attempt_error = _delete_appcontainer_profile_attempt(
+        profile_name,
+        attempt=1,
+    )
+    if attempt_error is not None:
+        attempt_errors.append(attempt_error)
+
+    if not profile_deleted:
+        if workspace is not None:
+            fallback_errors.extend(
+                _remove_tree_and_verify(
+                    workspace,
+                    label="AppContainer workspace",
+                )
+            )
+        if profile_folder is not None and profile_folder != workspace:
+            fallback_errors.extend(
+                _remove_tree_and_verify(
+                    profile_folder,
+                    label="AppContainer profile folder",
+                )
+            )
+        profile_deleted, attempt_error = _delete_appcontainer_profile_attempt(
+            profile_name,
+            attempt=2,
+        )
+        if attempt_error is not None:
+            attempt_errors.append(attempt_error)
+
+    absence_errors: list[str] = []
+    if profile_folder is not None:
+        absence_errors.extend(
+            _verify_tree_absent_after_profile_cleanup(
+                profile_folder,
+                label="AppContainer profile folder",
+            )
+        )
+    if workspace is not None and workspace != profile_folder:
+        absence_errors.extend(
+            _verify_tree_absent_after_profile_cleanup(
+                workspace,
+                label="AppContainer workspace",
+            )
+        )
+
+    if profile_deleted and not absence_errors:
+        return [], True
+    return [*attempt_errors, *fallback_errors, *absence_errors], profile_deleted
+
+
+def _raise_cleanup_error(
+    errors: list[str],
+    *,
+    active_error: BaseException | None,
+) -> None:
+    if not errors:
+        return
+    cleanup_error = SandboxCleanupError("; ".join(errors))
+    if active_error is None:
+        raise cleanup_error
+    raise cleanup_error from active_error
+
+
 @dataclass(slots=True)
 class _AppContainerContext:
     profile_name: str
@@ -561,6 +833,9 @@ class _AppContainerContext:
     extraction_runtime_fingerprint: str
     extraction_runtime_file_count: int
     extraction_runtime_bytes: int
+    rendering_runtime_fingerprint: str
+    rendering_runtime_file_count: int
+    rendering_runtime_bytes: int
     python_runtime_root: Path
     python_runtime_source: Path
     python_runtime_fingerprint: str
@@ -571,28 +846,20 @@ class _AppContainerContext:
     profile_created: bool = False
 
     def cleanup(self) -> list[str]:
-        errors: list[str] = []
-        if self.workspace.exists():
-            try:
-                shutil.rmtree(self.workspace)
-            except OSError as error:
-                errors.append(f"AppContainer workspace cleanup failed: {error}")
+        errors: list[str]
         if self.profile_created:
-            result = _userenv.DeleteAppContainerProfile(self.profile_name)
-            if result < 0:
-                errors.append(
-                    f"DeleteAppContainerProfile HRESULT 0x{result & 0xFFFFFFFF:08X}"
-                )
-            else:
+            errors, profile_deleted = _cleanup_appcontainer_profile(
+                self.profile_name,
+                profile_folder=self.profile_folder,
+                workspace=self.workspace,
+            )
+            if profile_deleted:
                 self.profile_created = False
+        else:
+            errors = []
         if self.sid:
             _advapi32.FreeSid(self.sid)
             self.sid = None
-        if self.profile_folder.exists():
-            try:
-                shutil.rmtree(self.profile_folder)
-            except OSError as error:
-                errors.append(f"AppContainer profile-folder cleanup failed: {error}")
         return errors
 
 
@@ -603,6 +870,7 @@ class _ProcessAttributeContext:
     inherited_handles: object
     inherited_handle_values: tuple[int, ...]
     security_capabilities: object | None
+    all_application_packages_policy: object | None
     initialized: bool = True
 
     def cleanup(self) -> None:
@@ -648,6 +916,9 @@ class _WorkerRuntimeCopy:
     extraction_runtime_fingerprint: str
     extraction_runtime_file_count: int
     extraction_runtime_bytes: int
+    rendering_runtime_fingerprint: str
+    rendering_runtime_file_count: int
+    rendering_runtime_bytes: int
 
 
 def _appcontainer_apis_available() -> bool:
@@ -720,11 +991,25 @@ def _appcontainer_profile_folder(profile_name: str, sid_string: str) -> Path:
     return folder
 
 
+def _appcontainer_workspace_sddl(owner_sid: str, appcontainer_sid: str) -> str:
+    # 0x1301FF grants all file/directory-specific rights plus DELETE,
+    # READ_CONTROL, and SYNCHRONIZE.  It deliberately excludes WRITE_DAC and
+    # WRITE_OWNER so an exploited worker cannot make its workspace undeletable.
+    # The root-only DELETE deny prevents the worker from moving the workspace;
+    # inherited children still receive DELETE for normal rename/remove work.
+    worker_access_mask = "0x1301ff"
+    return (
+        f"D:P(D;;SD;;;{appcontainer_sid})"
+        f"(A;OICI;FA;;;{owner_sid})"
+        f"(A;OICI;{worker_access_mask};;;{appcontainer_sid})"
+    )
+
+
 def _create_appcontainer_workspace(root: Path, appcontainer_sid: str) -> Path:
     workspace = root / f"appcontainer-{secrets.token_hex(12)}"
     descriptor = wintypes.LPVOID()
     owner_sid = _current_user_sid()
-    sddl = f"D:P(A;OICI;FA;;;{owner_sid})(A;OICI;FA;;;{appcontainer_sid})"
+    sddl = _appcontainer_workspace_sddl(owner_sid, appcontainer_sid)
     if not _advapi32.ConvertStringSecurityDescriptorToSecurityDescriptorW(
         sddl,
         1,
@@ -793,14 +1078,31 @@ def _manifest_fingerprint(
     return aggregate.hexdigest()
 
 
-def _project_runtime_manifest() -> tuple[
+def _project_runtime_manifest(
+    operation: str = "preflight",
+) -> tuple[
     Path,
     tuple[tuple[Path, int, str], ...],
     str,
 ]:
     package_root = Path(os.path.abspath(Path(__file__).resolve().parents[1]))
+    if operation in {"qa", "render"}:
+        relative_files = tuple(
+            sorted(
+                (
+                    source.relative_to(package_root)
+                    for source in package_root.rglob("*")
+                    if source.is_file()
+                    and source.suffix.casefold() in {".json", ".py"}
+                    and "__pycache__" not in source.parts
+                ),
+                key=lambda path: path.as_posix().casefold(),
+            )
+        )
+    else:
+        relative_files = _PROJECT_RUNTIME_FILES
     manifest: list[tuple[Path, int, str]] = []
-    for relative in _PROJECT_RUNTIME_FILES:
+    for relative in relative_files:
         source = package_root / relative
         if not _runtime_source_is_safe(package_root, source):
             raise SandboxUnavailableError(
@@ -811,6 +1113,114 @@ def _project_runtime_manifest() -> tuple[
         manifest.append((relative, size, _file_sha256(source)))
     result = tuple(manifest)
     return package_root, result, _manifest_fingerprint(result)
+
+
+def _rendering_runtime_manifest() -> tuple[
+    Path,
+    tuple[tuple[Path, int, str], ...],
+    str,
+]:
+    global _RENDERING_RUNTIME_MANIFEST_CACHE
+    if _RENDERING_RUNTIME_MANIFEST_CACHE is not None:
+        return _RENDERING_RUNTIME_MANIFEST_CACHE
+
+    from importlib import metadata
+
+    source_root: Path | None = None
+    manifest: list[tuple[Path, int, str]] = []
+    seen_paths: set[str] = set()
+    for distribution_name, expected_version, package_roots in _RENDERING_DEPENDENCIES:
+        try:
+            distribution = metadata.distribution(distribution_name)
+        except metadata.PackageNotFoundError as error:
+            raise SandboxUnavailableError(
+                f"required {distribution_name} distribution is missing"
+            ) from error
+        if distribution.version != expected_version:
+            raise SandboxUnavailableError(
+                f"{distribution_name} version must be exactly {expected_version}"
+            )
+        located_root = Path(os.path.abspath(distribution.locate_file("")))
+        if source_root is None:
+            source_root = located_root
+        elif source_root != located_root:
+            raise SandboxUnavailableError(
+                "rendering dependencies do not share one controlled runtime root"
+            )
+        files = distribution.files
+        if files is None:
+            raise SandboxUnavailableError(
+                f"{distribution_name} distribution has no file manifest"
+            )
+        matched = 0
+        for entry in files:
+            parts = tuple(entry.parts)
+            if (
+                not parts
+                or parts[0] not in package_roots
+                or "__pycache__" in parts
+                or Path(*parts).suffix.casefold() == ".pyc"
+            ):
+                continue
+            relative = Path(*parts)
+            normalized = relative.as_posix().casefold()
+            if normalized in seen_paths:
+                continue
+            source = Path(os.path.abspath(distribution.locate_file(entry)))
+            if not _runtime_source_is_safe(located_root, source):
+                raise SandboxUnavailableError(
+                    "rendering runtime contains an unavailable or reparse file: "
+                    + relative.as_posix()
+                )
+            seen_paths.add(normalized)
+            manifest.append((relative, source.stat().st_size, _file_sha256(source)))
+            matched += 1
+        if matched == 0:
+            raise SandboxUnavailableError(
+                f"{distribution_name} package manifest is incomplete"
+            )
+    if source_root is None:
+        raise SandboxUnavailableError("rendering runtime manifest is empty")
+    manifest.sort(key=lambda item: item[0].as_posix().casefold())
+    result = tuple(manifest)
+    _RENDERING_RUNTIME_MANIFEST_CACHE = (
+        source_root,
+        result,
+        _manifest_fingerprint(result),
+    )
+    return _RENDERING_RUNTIME_MANIFEST_CACHE
+
+
+def _rendering_asset_manifest() -> tuple[
+    Path,
+    tuple[tuple[Path, int, str], ...],
+    str,
+]:
+    package_root = Path(os.path.abspath(Path(__file__).resolve().parents[1]))
+    repository_root = package_root.parents[1]
+    assets_root = repository_root / "assets"
+    relative_files = tuple(
+        sorted(
+            (
+                source.relative_to(repository_root)
+                for source in assets_root.rglob("*")
+                if source.is_file()
+            ),
+            key=lambda path: path.as_posix().casefold(),
+        )
+    )
+    manifest: list[tuple[Path, int, str]] = []
+    for relative in relative_files:
+        source = repository_root / relative
+        if not _runtime_source_is_safe(repository_root, source):
+            raise SandboxUnavailableError(
+                "rendering asset is unavailable or reparse: " + relative.as_posix()
+            )
+        manifest.append((relative, source.stat().st_size, _file_sha256(source)))
+    if not manifest:
+        raise SandboxUnavailableError("rendering asset manifest is empty")
+    result = tuple(manifest)
+    return repository_root, result, _manifest_fingerprint(result)
 
 
 def _pypdf_runtime_manifest() -> tuple[
@@ -1022,7 +1432,9 @@ def _copy_worker_runtime(
 ) -> _WorkerRuntimeCopy:
     runtime_root = workspace / "runtime"
     runtime_root.mkdir()
-    project_root, project_manifest, project_fingerprint = _project_runtime_manifest()
+    project_root, project_manifest, project_fingerprint = _project_runtime_manifest(
+        operation
+    )
     package_destination = runtime_root / "academic_pdf_en_zh_reader"
     project_bytes = _copy_verified_manifest(
         project_root,
@@ -1053,6 +1465,29 @@ def _copy_worker_runtime(
             extraction_manifest,
         )
         extraction_file_count = len(extraction_manifest)
+    rendering_fingerprint = ""
+    rendering_file_count = 0
+    rendering_bytes = 0
+    if operation in {"qa", "render"}:
+        rendering_root, rendering_manifest, dependency_fingerprint = (
+            _rendering_runtime_manifest()
+        )
+        rendering_bytes = _copy_verified_manifest(
+            rendering_root,
+            runtime_root,
+            rendering_manifest,
+        )
+        rendering_file_count = len(rendering_manifest)
+        assets_root, assets_manifest, asset_fingerprint = _rendering_asset_manifest()
+        rendering_bytes += _copy_verified_manifest(
+            assets_root,
+            workspace,
+            assets_manifest,
+        )
+        rendering_file_count += len(assets_manifest)
+        rendering_fingerprint = hashlib.sha256(
+            f"{dependency_fingerprint}:{asset_fingerprint}".encode("ascii")
+        ).hexdigest()
     return _WorkerRuntimeCopy(
         root=runtime_root,
         project_fingerprint=project_fingerprint,
@@ -1067,6 +1502,9 @@ def _copy_worker_runtime(
         extraction_runtime_fingerprint=extraction_fingerprint,
         extraction_runtime_file_count=extraction_file_count,
         extraction_runtime_bytes=extraction_bytes,
+        rendering_runtime_fingerprint=rendering_fingerprint,
+        rendering_runtime_file_count=rendering_file_count,
+        rendering_runtime_bytes=rendering_bytes,
     )
 
 
@@ -1119,7 +1557,6 @@ def _python_runtime_manifest() -> tuple[
         candidates.add(path)
 
     manifest: list[tuple[Path, int, str]] = []
-    aggregate = hashlib.sha256()
     for source in sorted(
         candidates,
         key=lambda path: path.relative_to(source_root).as_posix().casefold(),
@@ -1128,22 +1565,31 @@ def _python_runtime_manifest() -> tuple[
         size = source.stat().st_size
         digest = _file_sha256(source)
         manifest.append((relative, size, digest))
+    fingerprint = _runtime_manifest_fingerprint(manifest)
+    _PYTHON_RUNTIME_MANIFEST_CACHE = (
+        source_root,
+        tuple(manifest),
+        fingerprint,
+    )
+    return _PYTHON_RUNTIME_MANIFEST_CACHE
+
+
+def _runtime_manifest_fingerprint(
+    manifest: Iterable[tuple[Path, int, str]],
+) -> str:
+    aggregate = hashlib.sha256()
+    for relative, size, digest in manifest:
         aggregate.update(relative.as_posix().encode("utf-8"))
         aggregate.update(b"\0")
         aggregate.update(str(size).encode("ascii"))
         aggregate.update(b"\0")
         aggregate.update(digest.encode("ascii"))
         aggregate.update(b"\n")
-    _PYTHON_RUNTIME_MANIFEST_CACHE = (
-        source_root,
-        tuple(manifest),
-        aggregate.hexdigest(),
-    )
-    return _PYTHON_RUNTIME_MANIFEST_CACHE
+    return aggregate.hexdigest()
 
 
 def _copy_minimal_python_runtime(workspace: Path) -> _PythonRuntimeCopy:
-    source_root, manifest, fingerprint = _python_runtime_manifest()
+    source_root, manifest, _source_fingerprint = _python_runtime_manifest()
     destination_root = workspace / "python-runtime"
     destination_root.mkdir()
     total_bytes = 0
@@ -1160,11 +1606,31 @@ def _copy_minimal_python_runtime(workspace: Path) -> _PythonRuntimeCopy:
                 + relative.as_posix()
             )
         total_bytes += actual_size
+    path_config_relative = Path(
+        f"python{sys.version_info.major}{sys.version_info.minor}._pth"
+    )
+    path_config = destination_root / path_config_relative
+    with path_config.open("xb") as stream:
+        stream.write(_PYTHON_ISOLATED_PATH_CONFIG)
+    path_config_size = path_config.stat().st_size
+    path_config_hash = _file_sha256(path_config)
+    if (
+        path_config_size != len(_PYTHON_ISOLATED_PATH_CONFIG)
+        or path_config.read_bytes() != _PYTHON_ISOLATED_PATH_CONFIG
+    ):
+        raise SandboxUnavailableError(
+            "isolated Python path configuration failed verification"
+        )
+    copied_manifest = (
+        *manifest,
+        (path_config_relative, path_config_size, path_config_hash),
+    )
+    total_bytes += path_config_size
     return _PythonRuntimeCopy(
         root=destination_root,
         source=source_root,
-        fingerprint=fingerprint,
-        file_count=len(manifest),
+        fingerprint=_runtime_manifest_fingerprint(copied_manifest),
+        file_count=len(copied_manifest),
         total_bytes=total_bytes,
     )
 
@@ -1225,6 +1691,10 @@ def _prepare_appcontainer(
             handoffs = (EXTRACTION_PREFLIGHT_PATH, EXTRACTION_NORMALIZATION_PATH)
         elif request.operation == "normalize":
             handoffs = (NORMALIZATION_PREFLIGHT_PATH,)
+        elif request.operation == "render":
+            handoffs = (RENDER_HANDOFF_PATH,)
+        elif request.operation == "qa":
+            handoffs = (QA_HANDOFF_PATH, QA_CANDIDATE_PATH)
         for relative_handoff in handoffs:
             handoff_source = resolve_controlled_path(
                 root,
@@ -1257,6 +1727,11 @@ def _prepare_appcontainer(
                 worker_runtime.extraction_runtime_file_count
             ),
             extraction_runtime_bytes=worker_runtime.extraction_runtime_bytes,
+            rendering_runtime_fingerprint=(
+                worker_runtime.rendering_runtime_fingerprint
+            ),
+            rendering_runtime_file_count=worker_runtime.rendering_runtime_file_count,
+            rendering_runtime_bytes=worker_runtime.rendering_runtime_bytes,
             python_runtime_root=python_runtime.root,
             python_runtime_source=python_runtime.source,
             python_runtime_fingerprint=python_runtime.fingerprint,
@@ -1266,28 +1741,15 @@ def _prepare_appcontainer(
             profile_creation_hresult=result & 0xFFFFFFFF,
             profile_created=True,
         )
-    except Exception as error:
-        cleanup_errors: list[str] = []
-        if workspace is not None and workspace.exists():
-            try:
-                shutil.rmtree(workspace)
-            except OSError as cleanup_error:
-                cleanup_errors.append(f"workspace cleanup failed: {cleanup_error}")
-        delete_result = _userenv.DeleteAppContainerProfile(profile_name)
-        if delete_result < 0:
-            cleanup_errors.append(
-                "DeleteAppContainerProfile failed "
-                f"(HRESULT 0x{delete_result & 0xFFFFFFFF:08X})"
-            )
+    except BaseException as error:
+        cleanup_errors, _profile_deleted = _cleanup_appcontainer_profile(
+            profile_name,
+            profile_folder=profile_folder,
+            workspace=workspace,
+        )
         if sid:
             _advapi32.FreeSid(sid)
-        if profile_folder is not None and profile_folder.exists():
-            try:
-                shutil.rmtree(profile_folder)
-            except OSError as cleanup_error:
-                cleanup_errors.append(f"profile-folder cleanup failed: {cleanup_error}")
-        if cleanup_errors:
-            error.add_note("; ".join(cleanup_errors))
+        _raise_cleanup_error(cleanup_errors, active_error=error)
         raise
 
 
@@ -1295,7 +1757,7 @@ def _prepare_process_attributes(
     inherited_handles: tuple[object, object, object],
     appcontainer: _AppContainerContext | None,
 ) -> _ProcessAttributeContext:
-    attribute_count = 1 + int(appcontainer is not None)
+    attribute_count = 1 + (2 * int(appcontainer is not None))
     attribute_size = ctypes.c_size_t()
     _kernel32.InitializeProcThreadAttributeList(
         None, attribute_count, 0, ctypes.byref(attribute_size)
@@ -1330,6 +1792,7 @@ def _prepare_process_attributes(
             raise _win_error("UpdateProcThreadAttribute(HandleList)")
 
         capabilities: object | None = None
+        all_application_packages_policy: object | None = None
         if appcontainer is not None:
             capabilities = _SECURITY_CAPABILITIES(appcontainer.sid, None, 0, 0)
             if not _kernel32.UpdateProcThreadAttribute(
@@ -1342,12 +1805,28 @@ def _prepare_process_attributes(
                 None,
             ):
                 raise _win_error("UpdateProcThreadAttribute(SecurityCapabilities)")
+            all_application_packages_policy = wintypes.DWORD(
+                _PROCESS_CREATION_ALL_APPLICATION_PACKAGES_OPT_OUT
+            )
+            if not _kernel32.UpdateProcThreadAttribute(
+                attribute_list,
+                0,
+                _PROC_THREAD_ATTRIBUTE_ALL_APPLICATION_PACKAGES_POLICY,
+                ctypes.byref(all_application_packages_policy),
+                ctypes.sizeof(all_application_packages_policy),
+                None,
+                None,
+            ):
+                raise _win_error(
+                    "UpdateProcThreadAttribute(AllApplicationPackagesPolicy)"
+                )
         return _ProcessAttributeContext(
             buffer=attribute_buffer,
             attribute_list=attribute_list,
             inherited_handles=handle_array,
             inherited_handle_values=handle_values,
             security_capabilities=capabilities,
+            all_application_packages_policy=all_application_packages_policy,
         )
     except Exception:
         if initialized:
@@ -1366,6 +1845,75 @@ def _win_error(action: str, *, error: int | None = None) -> SandboxUnavailableEr
     code = ctypes.get_last_error() if error is None else error
     detail = ctypes.FormatError(code).strip() if code else "unknown Win32 error"
     return SandboxUnavailableError(f"{action} failed (WinError {code}: {detail})")
+
+
+def _terminate_job_and_wait(job: object, process: object | None) -> list[str]:
+    """Terminate the Job and confirm every assigned process has exited."""
+
+    errors: list[str] = []
+    if not _kernel32.TerminateJobObject(job, 1):
+        errors.append(str(_win_error("TerminateJobObject during cleanup")))
+    if process:
+        wait_result = _kernel32.WaitForSingleObject(process, 5000)
+        if wait_result == 0xFFFFFFFF:
+            errors.append(str(_win_error("WaitForSingleObject during worker cleanup")))
+        elif wait_result != 0:
+            errors.append(
+                "WaitForSingleObject during worker cleanup returned "
+                f"{wait_result} instead of WAIT_OBJECT_0"
+            )
+    deadline = time.monotonic() + 5.0
+    while True:
+        accounting = _JOBOBJECT_BASIC_ACCOUNTING_INFORMATION()
+        returned = wintypes.DWORD()
+        if not _kernel32.QueryInformationJobObject(
+            job,
+            1,
+            ctypes.byref(accounting),
+            ctypes.sizeof(accounting),
+            ctypes.byref(returned),
+        ):
+            errors.append(
+                str(_win_error("QueryInformationJobObject during worker cleanup"))
+            )
+            break
+        if accounting.ActiveProcesses == 0:
+            break
+        if time.monotonic() >= deadline:
+            errors.append(
+                "Job Object still had active processes after cleanup termination"
+            )
+            break
+        time.sleep(0.01)
+    return errors
+
+
+def _terminate_process_and_wait(
+    process: object,
+    *,
+    label: str,
+) -> tuple[list[str], bool]:
+    """Retry direct termination until the unassigned child is confirmed gone."""
+
+    errors: list[str] = []
+    for attempt in (1, 2):
+        if not _kernel32.TerminateProcess(process, 1):
+            errors.append(
+                str(_win_error(f"TerminateProcess({label}) attempt {attempt}"))
+            )
+        wait_result = _kernel32.WaitForSingleObject(process, 5000)
+        if wait_result == 0:
+            return [], True
+        if wait_result == 0xFFFFFFFF:
+            errors.append(
+                str(_win_error(f"WaitForSingleObject({label}) attempt {attempt}"))
+            )
+        else:
+            errors.append(
+                f"WaitForSingleObject({label}) attempt {attempt} returned "
+                f"{wait_result} instead of WAIT_OBJECT_0"
+            )
+    return errors, False
 
 
 def _close_handle(handle: object | None) -> None:
@@ -2099,6 +2647,15 @@ def _run_worker(
         )
     resolve_controlled_path(workspace, request.input_path, must_exist=True)
     request_bytes = encode_request(request, limits)
+    multiple_process_probe = bool(
+        request.operation == "probe"
+        and request.parameters.get("case") == "spawn_for_kill_probe"
+        and limits.active_process_limit == 2
+    )
+    if limits.active_process_limit != 1 and not multiple_process_probe:
+        raise SandboxUnavailableError(
+            "production workers require an active process limit of exactly one"
+        )
 
     restricted_token: object | None = None
     job: object | None = None
@@ -2121,6 +2678,9 @@ def _run_worker(
     timed_out = False
     appcontainer: _AppContainerContext | None = None
     process_attributes: _ProcessAttributeContext | None = None
+    process_exit_confirmed = False
+    process_assigned_to_job = False
+    unassigned_process_errors: list[str] = []
 
     try:
         appcontainer = (
@@ -2140,6 +2700,8 @@ def _run_worker(
         provenance["restricted_token_origin"] = token_origin
         provenance["appcontainer_api_available"] = _appcontainer_apis_available()
         provenance["appcontainer_implemented"] = appcontainer is not None
+        provenance["appcontainer_lpac"] = False
+        provenance["appcontainer_lpac_policy_applied"] = False
         provenance["network_isolation_implemented"] = appcontainer is not None
         provenance["restricted_token"] = appcontainer is None
         provenance["appcontainer_lowbox"] = appcontainer is not None
@@ -2221,6 +2783,21 @@ def _run_worker(
                 "extraction_runtime_bytes",
                 0,
             )
+            provenance["rendering_runtime_fingerprint"] = getattr(
+                appcontainer,
+                "rendering_runtime_fingerprint",
+                "test-double-unavailable",
+            )
+            provenance["rendering_runtime_file_count"] = getattr(
+                appcontainer,
+                "rendering_runtime_file_count",
+                0,
+            )
+            provenance["rendering_runtime_bytes"] = getattr(
+                appcontainer,
+                "rendering_runtime_bytes",
+                0,
+            )
         child_stdin, parent_stdin = _make_pipe()
         parent_stdout, child_stdout = _make_pipe()
         parent_stderr, child_stderr = _make_pipe()
@@ -2232,6 +2809,18 @@ def _run_worker(
             (child_stdin, child_stdout, child_stderr),
             appcontainer,
         )
+        if appcontainer is not None:
+            lpac_policy = process_attributes.all_application_packages_policy
+            if (
+                lpac_policy is None
+                or getattr(lpac_policy, "value", None)
+                != _PROCESS_CREATION_ALL_APPLICATION_PACKAGES_OPT_OUT
+            ):
+                raise SandboxUnavailableError(
+                    "LPAC all-application-packages opt-out was not applied"
+                )
+            provenance["appcontainer_lpac_policy_applied"] = True
+            provenance["appcontainer_lpac"] = True
         provenance["handle_list_enforced"] = True
         provenance["inherited_handle_count"] = len(
             process_attributes.inherited_handle_values
@@ -2305,21 +2894,15 @@ def _run_worker(
 
         if not _kernel32.AssignProcessToJobObject(job, process):
             assign_error = ctypes.get_last_error()
-            cleanup_errors: list[str] = []
-            if not _kernel32.TerminateProcess(process, 1):
-                cleanup_errors.append(
-                    str(_win_error("TerminateProcess(unassigned child)"))
+            unassigned_process_errors, process_exit_confirmed = (
+                _terminate_process_and_wait(
+                    process,
+                    label="unassigned child",
                 )
-            wait_result = _kernel32.WaitForSingleObject(process, 5000)
-            if wait_result != 0:
-                cleanup_errors.append(
-                    "WaitForSingleObject(unassigned child) "
-                    f"returned {wait_result} instead of WAIT_OBJECT_0"
-                )
+            )
             detail = _win_error("AssignProcessToJobObject", error=assign_error)
-            if cleanup_errors:
-                detail.add_note("; ".join(cleanup_errors))
             raise detail
+        process_assigned_to_job = True
 
         stdout_thread = threading.Thread(
             target=_bounded_pipe_reader,
@@ -2411,6 +2994,9 @@ def _run_worker(
         artifact_bytes: bytes | None = None
         normalized_pdf_bytes: bytes | None = None
         normalization_artifact_bytes: bytes | None = None
+        render_pdf_bytes: bytes | None = None
+        render_manifest_bytes: bytes | None = None
+        qa_artifact_bytes: bytes | None = None
         if request.operation == "preflight":
             if appcontainer is None:
                 raise SandboxUnavailableError(
@@ -2456,6 +3042,30 @@ def _run_worker(
                 )
             )
             artifact_bytes = normalization_artifact_bytes
+        elif request.operation == "render":
+            if appcontainer is None:
+                raise SandboxUnavailableError(
+                    "rendering requires a zero-capability LPAC"
+                )
+            if response.result is None:
+                raise WorkerExecutionError(
+                    "render worker omitted its artifact descriptors"
+                )
+            render_pdf_bytes, render_manifest_bytes = _read_render_artifacts(
+                appcontainer.workspace,
+                response.result,
+                limits,
+            )
+        elif request.operation == "qa":
+            if appcontainer is None:
+                raise SandboxUnavailableError("QA requires a zero-capability LPAC")
+            if response.result is None:
+                raise WorkerExecutionError("QA worker omitted its artifact descriptor")
+            qa_artifact_bytes = _read_qa_artifact(
+                appcontainer.workspace,
+                response.result,
+                limits,
+            )
 
         child_pid = response.result.get("child_pid") if response.result else None
         if isinstance(child_pid, int):
@@ -2477,10 +3087,34 @@ def _run_worker(
             artifact_bytes=artifact_bytes,
             normalized_pdf_bytes=normalized_pdf_bytes,
             normalization_artifact_bytes=normalization_artifact_bytes,
+            render_pdf_bytes=render_pdf_bytes,
+            render_manifest_bytes=render_manifest_bytes,
+            qa_artifact_bytes=qa_artifact_bytes,
         )
     finally:
+        active_error = sys.exception()
+        cleanup_errors: list[str] = []
+        if process and not process_exit_confirmed and not process_assigned_to_job:
+            retry_errors, process_exit_confirmed = _terminate_process_and_wait(
+                process,
+                label="unassigned child during final cleanup",
+            )
+            if process_exit_confirmed:
+                unassigned_process_errors = []
+            else:
+                cleanup_errors.extend(unassigned_process_errors)
+                cleanup_errors.extend(retry_errors)
         if job:
-            _kernel32.TerminateJobObject(job, 1)
+            cleanup_errors.extend(
+                _terminate_job_and_wait(
+                    job,
+                    (
+                        process
+                        if process_assigned_to_job and not process_exit_confirmed
+                        else None
+                    ),
+                )
+            )
         for handle in (
             process,
             thread,
@@ -2514,22 +3148,26 @@ def _run_worker(
         stdout_thread = None
         stderr_thread = None
         if process_attributes is not None:
-            process_attributes.cleanup()
+            try:
+                process_attributes.cleanup()
+            except BaseException as error:
+                cleanup_errors.append(f"process attributes cleanup failed: {error}")
         if appcontainer is not None:
-            cleanup_errors = appcontainer.cleanup()
-            provenance["appcontainer_cleanup_verified"] = not cleanup_errors and not (
-                appcontainer.workspace.exists() or appcontainer.profile_folder.exists()
+            try:
+                appcontainer_cleanup_errors = appcontainer.cleanup()
+            except BaseException as error:
+                appcontainer_cleanup_errors = [
+                    f"AppContainer cleanup raised unexpectedly: {error}"
+                ]
+            cleanup_errors.extend(appcontainer_cleanup_errors)
+            provenance["appcontainer_cleanup_verified"] = not (
+                appcontainer_cleanup_errors
             )
-            if cleanup_errors:
-                cleanup_detail = "; ".join(cleanup_errors)
-                if sys.exception() is None:
-                    raise SandboxUnavailableError(cleanup_detail)
-                sys.exception().add_note(cleanup_detail)  # type: ignore[union-attr]
         if reader_cleanup_failed:
-            cleanup_detail = "worker pipe readers did not stop during cleanup"
-            if sys.exception() is None:
-                raise WorkerExecutionError(cleanup_detail)
-            sys.exception().add_note(cleanup_detail)  # type: ignore[union-attr]
+            cleanup_errors.append("worker pipe readers did not stop during cleanup")
+        if cleanup_errors:
+            _raise_cleanup_error(cleanup_errors, active_error=active_error)
+        active_error = None
 
 
 def run_worker(
@@ -2599,6 +3237,46 @@ def _current_process_security() -> tuple[bool, list[str], bool, int]:
         )
     finally:
         _close_handle(token)
+
+
+def _token_lpac_status(token: object) -> tuple[bool | None, bool]:
+    is_lpac = wintypes.DWORD()
+    returned = wintypes.DWORD()
+    if not _advapi32.GetTokenInformation(
+        token,
+        _TOKEN_IS_LESS_PRIVILEGED_APPCONTAINER,
+        ctypes.byref(is_lpac),
+        ctypes.sizeof(is_lpac),
+        ctypes.byref(returned),
+    ):
+        error = ctypes.get_last_error()
+        if error == 87:
+            return None, False
+        raise _win_error(
+            "GetTokenInformation(TokenIsLessPrivilegedAppContainer)",
+            error=error,
+        )
+    return bool(is_lpac.value), True
+
+
+def _current_process_lpac_status() -> tuple[bool | None, bool]:
+    token = _open_current_token(0x0008)
+    try:
+        return _token_lpac_status(token)
+    finally:
+        _close_handle(token)
+
+
+def _current_process_has_zero_capability_appcontainer() -> bool:
+    _restricted, _privileges, is_appcontainer, capability_count = (
+        _current_process_security()
+    )
+    if not is_appcontainer or capability_count != 0:
+        return False
+    is_lpac, query_supported = _current_process_lpac_status()
+    if query_supported:
+        return is_lpac is True
+    return is_lpac is None
 
 
 def _current_process_is_appcontainer() -> bool:
@@ -2808,11 +3486,16 @@ def _probe_case(request: WorkerRequest) -> dict[str, object]:
         restricted, privileges, appcontainer, capability_count = (
             _current_process_security()
         )
+        lpac_status, lpac_query_supported = (
+            _current_process_lpac_status() if appcontainer else (None, False)
+        )
         return {
             "restricted_token": restricted,
             "enabled_privileges": privileges,
             "appcontainer": appcontainer,
             "capability_count": capability_count,
+            "less_privileged_appcontainer": lpac_status,
+            "less_privileged_appcontainer_query_supported": lpac_query_supported,
             "process_id": os.getpid(),
         }
     if case == "outside_access":
@@ -3096,13 +3779,10 @@ def _run_preflight_request(
     request: WorkerRequest,
     limits: WorkerLimits,
 ) -> WorkerResponse:
-    _restricted, _privileges, is_appcontainer, capability_count = (
-        _current_process_security()
-    )
-    if not is_appcontainer or capability_count != 0:
+    if not _current_process_has_zero_capability_appcontainer():
         return WorkerResponse.failed(
             "SANDBOX_CONTRACT_UNVERIFIED",
-            "zero-capability AppContainer token required",
+            "zero-capability less-privileged AppContainer token required",
         )
 
     input_path = _resolve_prevalidated_appcontainer_path(
@@ -3308,13 +3988,10 @@ def _run_extraction_request(
     request: WorkerRequest,
     limits: WorkerLimits,
 ) -> WorkerResponse:
-    _restricted, _privileges, is_appcontainer, capability_count = (
-        _current_process_security()
-    )
-    if not is_appcontainer or capability_count != 0:
+    if not _current_process_has_zero_capability_appcontainer():
         return WorkerResponse.failed(
             "SANDBOX_CONTRACT_UNVERIFIED",
-            "zero-capability AppContainer token required",
+            "zero-capability less-privileged AppContainer token required",
         )
     input_path = _resolve_prevalidated_appcontainer_path(
         request.input_path,
@@ -3433,13 +4110,10 @@ def _run_normalization_request(
     request: WorkerRequest,
     limits: WorkerLimits,
 ) -> WorkerResponse:
-    _restricted, _privileges, is_appcontainer, capability_count = (
-        _current_process_security()
-    )
-    if not is_appcontainer or capability_count != 0:
+    if not _current_process_has_zero_capability_appcontainer():
         return WorkerResponse.failed(
             "SANDBOX_CONTRACT_UNVERIFIED",
-            "zero-capability AppContainer token required",
+            "zero-capability less-privileged AppContainer token required",
         )
     try:
         source = _read_prevalidated_appcontainer_file(
@@ -3553,6 +4227,270 @@ def _run_normalization_request(
     return WorkerResponse.ok(descriptors)
 
 
+def _validated_operation_handoff(
+    request: WorkerRequest,
+    *,
+    relative_path: str,
+    operation: str,
+    expected_fields: set[str],
+    limits: WorkerLimits,
+) -> dict[str, object]:
+    from academic_pdf_en_zh_reader.job.canonical_json import canonical_json_bytes
+
+    handoff = _read_prevalidated_appcontainer_file(
+        relative_path,
+        max_bytes=limits.max_extraction_artifact_bytes,
+    )
+    if (
+        handoff.size != request.parameters["handoff_bytes"]
+        or handoff.sha256 != request.parameters["handoff_sha256"]
+    ):
+        raise ProtocolError(f"{operation} handoff identity differs")
+    payload = _strict_json_object(handoff.data)
+    if (
+        set(payload) != expected_fields
+        or payload.get("schema_version") != "1.0.0"
+        or payload.get("operation") != operation
+        or canonical_json_bytes(payload) != handoff.data
+    ):
+        raise ProtocolError(f"{operation} handoff schema differs")
+    return payload
+
+
+def _fixed_artifact_descriptor(
+    relative_path: str,
+    *,
+    max_bytes: int,
+) -> dict[str, object]:
+    artifact = _read_prevalidated_appcontainer_file(
+        relative_path,
+        max_bytes=max_bytes,
+    )
+    return {
+        "artifact_path": relative_path,
+        "artifact_sha256": artifact.sha256,
+        "artifact_bytes": artifact.size,
+    }
+
+
+def _write_fixed_artifact(
+    relative_path: str,
+    payload: bytes,
+    *,
+    max_bytes: int,
+) -> dict[str, object]:
+    if not payload or len(payload) > max_bytes:
+        raise ProtocolError("worker artifact exceeds its fixed size limit")
+    destination = _resolve_prevalidated_appcontainer_path(
+        relative_path,
+        must_exist=False,
+    )
+    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_BINARY", 0)
+    flags |= getattr(os, "O_NOFOLLOW", 0)
+    descriptor = os.open(destination, flags, 0o600)
+    try:
+        view = memoryview(payload)
+        written = 0
+        while written < len(view):
+            count = os.write(descriptor, view[written:])
+            if count <= 0:
+                raise OSError("worker artifact write made no progress")
+            written += count
+        os.fsync(descriptor)
+    finally:
+        os.close(descriptor)
+    return {
+        "artifact_path": relative_path,
+        "artifact_sha256": hashlib.sha256(payload).hexdigest(),
+        "artifact_bytes": len(payload),
+    }
+
+
+def _run_render_request(
+    request: WorkerRequest,
+    limits: WorkerLimits,
+) -> WorkerResponse:
+    if not _current_process_has_zero_capability_appcontainer():
+        return WorkerResponse.failed(
+            "SANDBOX_CONTRACT_UNVERIFIED",
+            "zero-capability less-privileged AppContainer token required",
+        )
+    source_file = _read_prevalidated_appcontainer_file(
+        request.input_path,
+        max_bytes=limits.max_normalized_pdf_bytes,
+    )
+    if (
+        source_file.size != request.parameters["input_bytes"]
+        or source_file.sha256 != request.parameters["normalized_pdf_sha256"]
+    ):
+        raise ProtocolError("render source identity differs")
+    payload = _validated_operation_handoff(
+        request,
+        relative_path=RENDER_HANDOFF_PATH,
+        operation="render",
+        expected_fields={
+            "schema_version",
+            "operation",
+            "source",
+            "units",
+            "translation",
+            "review",
+            "annotations",
+            "frame_graph",
+            "layout",
+            "finalization_receipt",
+            "policy_inputs",
+            "overlay_plan",
+            "expected_finalization_receipt_hash",
+            "expected_overlay_plan_hash",
+        },
+        limits=limits,
+    )
+    try:
+        from academic_pdf_en_zh_reader.rendering.compose import (
+            compose_bilingual_pdf,
+        )
+
+        root = Path(os.path.abspath(os.getcwd()))
+        result = compose_bilingual_pdf(
+            source_pdf_path=root / request.input_path,
+            source=payload["source"],
+            units=payload["units"],
+            translation=payload["translation"],
+            review=payload["review"],
+            annotations=payload["annotations"],
+            frame_graph=payload["frame_graph"],
+            layout=payload["layout"],
+            finalization_receipt=payload["finalization_receipt"],
+            policy_inputs=payload["policy_inputs"],
+            overlay_plan=payload["overlay_plan"],
+            expected_finalization_receipt_hash=payload[
+                "expected_finalization_receipt_hash"
+            ],
+            expected_overlay_plan_hash=payload["expected_overlay_plan_hash"],
+            job_root=root,
+            output_pdf_path=root / RENDER_PDF_PATH,
+            render_manifest_path=root / RENDER_MANIFEST_PATH,
+        )
+        pdf = _fixed_artifact_descriptor(
+            RENDER_PDF_PATH,
+            max_bytes=limits.max_output_pdf_bytes,
+        )
+        manifest = _fixed_artifact_descriptor(
+            RENDER_MANIFEST_PATH,
+            max_bytes=limits.max_result_object_bytes,
+        )
+    except MemoryError:
+        return WorkerResponse.failed(
+            "WORKER_LIMIT_EXCEEDED",
+            "rendering exceeded the worker memory limit",
+        )
+    except Exception as error:
+        code = getattr(error, "code", None)
+        if not isinstance(code, str) or not re.fullmatch(r"[A-Z][A-Z0-9_]{0,63}", code):
+            code = "RENDER_FAILED"
+        return WorkerResponse.failed(code, "isolated rendering failed")
+    if (
+        pdf["artifact_sha256"] != result.output_pdf_sha256
+        or manifest["artifact_sha256"] != result.render_manifest_hash
+    ):
+        raise ProtocolError("render result identity differs")
+    return WorkerResponse.ok(
+        {
+            "candidate_pdf": pdf,
+            "render_manifest": manifest,
+            "composition": {
+                "output_pdf_sha256": result.output_pdf_sha256,
+                "render_manifest_hash": result.render_manifest_hash,
+                "overlay_pdf_sha256": result.overlay_pdf_sha256,
+                "page_count": result.page_count,
+            },
+        }
+    )
+
+
+def _run_qa_request(
+    request: WorkerRequest,
+    limits: WorkerLimits,
+) -> WorkerResponse:
+    if not _current_process_has_zero_capability_appcontainer():
+        return WorkerResponse.failed(
+            "SANDBOX_CONTRACT_UNVERIFIED",
+            "zero-capability less-privileged AppContainer token required",
+        )
+    source_file = _read_prevalidated_appcontainer_file(
+        request.input_path,
+        max_bytes=limits.max_normalized_pdf_bytes,
+    )
+    candidate_file = _read_prevalidated_appcontainer_file(
+        QA_CANDIDATE_PATH,
+        max_bytes=limits.max_output_pdf_bytes,
+    )
+    if (
+        source_file.size != request.parameters["input_bytes"]
+        or source_file.sha256 != request.parameters["normalized_pdf_sha256"]
+        or candidate_file.size != request.parameters["candidate_bytes"]
+        or candidate_file.sha256 != request.parameters["candidate_pdf_sha256"]
+    ):
+        raise ProtocolError("QA PDF identity differs")
+    payload = _validated_operation_handoff(
+        request,
+        relative_path=QA_HANDOFF_PATH,
+        operation="qa",
+        expected_fields={
+            "schema_version",
+            "operation",
+            "source",
+            "units",
+            "translation",
+            "review",
+            "annotations",
+            "frame_graph",
+            "layout",
+            "finalization_receipt",
+            "policy_inputs",
+            "overlay_plan",
+            "render_manifest",
+            "expected_render_manifest_hash",
+        },
+        limits=limits,
+    )
+    try:
+        from academic_pdf_en_zh_reader.job.canonical_json import canonical_json_bytes
+        from academic_pdf_en_zh_reader.qa.api import run_mechanical_qa
+
+        root = Path(os.path.abspath(os.getcwd()))
+        qa = run_mechanical_qa(
+            source_pdf_path=root / request.input_path,
+            output_pdf_path=root / QA_CANDIDATE_PATH,
+            source=payload["source"],
+            units=payload["units"],
+            translation=payload["translation"],
+            review=payload["review"],
+            annotations=payload["annotations"],
+            frame_graph=payload["frame_graph"],
+            layout=payload["layout"],
+            finalization_receipt=payload["finalization_receipt"],
+            policy_inputs=payload["policy_inputs"],
+            overlay_plan=payload["overlay_plan"],
+            render_manifest=payload["render_manifest"],
+            expected_render_manifest_hash=payload["expected_render_manifest_hash"],
+        )
+        descriptor = _write_fixed_artifact(
+            QA_ARTIFACT_PATH,
+            canonical_json_bytes(qa),
+            max_bytes=limits.max_result_object_bytes,
+        )
+    except MemoryError:
+        return WorkerResponse.failed(
+            "WORKER_LIMIT_EXCEEDED",
+            "QA exceeded the worker memory limit",
+        )
+    except Exception:
+        return WorkerResponse.failed("QA_FAILED", "isolated QA failed")
+    return WorkerResponse.ok({"qa": descriptor})
+
+
 def _dispatch_request(
     request: WorkerRequest,
     limits: WorkerLimits,
@@ -3565,6 +4503,10 @@ def _dispatch_request(
         return _run_extraction_request(request, limits)
     if request.operation == "normalize":
         return _run_normalization_request(request, limits)
+    if request.operation == "render":
+        return _run_render_request(request, limits)
+    if request.operation == "qa":
+        return _run_qa_request(request, limits)
     return WorkerResponse.failed("PROTOCOL_ERROR", "unsupported operation")
 
 
@@ -3766,6 +4708,99 @@ def _read_normalization_artifacts(
     return pdf.data, artifact.data
 
 
+def _read_fixed_descriptor_artifact(
+    workspace: Path,
+    descriptor: object,
+    *,
+    expected_path: str,
+    max_bytes: int,
+    label: str,
+) -> bytes:
+    try:
+        expected_hash, expected_size = _validate_normalization_descriptor(
+            descriptor,
+            expected_path=expected_path,
+            max_bytes=max_bytes,
+            label=label,
+        )
+        artifact = read_bounded_regular_file(
+            resolve_controlled_path(workspace, expected_path, must_exist=True),
+            max_bytes=max_bytes,
+        )
+    except (OSError, ProtocolError, UnsafeInputError, ValueError) as error:
+        raise WorkerExecutionError(f"{label} could not be read safely") from error
+    if artifact.size != expected_size or artifact.sha256 != expected_hash:
+        raise WorkerExecutionError(f"{label} integrity check failed")
+    return artifact.data
+
+
+def _read_render_artifacts(
+    workspace: Path,
+    descriptors: Mapping[str, object],
+    limits: WorkerLimits,
+) -> tuple[bytes, bytes]:
+    if set(descriptors) != {"candidate_pdf", "render_manifest", "composition"}:
+        raise WorkerExecutionError("render descriptor set does not match the schema")
+    composition = descriptors["composition"]
+    if not isinstance(composition, Mapping) or set(composition) != {
+        "output_pdf_sha256",
+        "render_manifest_hash",
+        "overlay_pdf_sha256",
+        "page_count",
+    }:
+        raise WorkerExecutionError("render composition descriptor is invalid")
+    for name in (
+        "output_pdf_sha256",
+        "render_manifest_hash",
+        "overlay_pdf_sha256",
+    ):
+        value = composition[name]
+        if (
+            not isinstance(value, str)
+            or len(value) != 64
+            or any(character not in "0123456789abcdef" for character in value)
+        ):
+            raise WorkerExecutionError("render composition hash is invalid")
+    if type(composition["page_count"]) is not int or composition["page_count"] <= 0:
+        raise WorkerExecutionError("render composition page count is invalid")
+    pdf = _read_fixed_descriptor_artifact(
+        workspace,
+        descriptors["candidate_pdf"],
+        expected_path=RENDER_PDF_PATH,
+        max_bytes=limits.max_output_pdf_bytes,
+        label="rendered PDF",
+    )
+    manifest = _read_fixed_descriptor_artifact(
+        workspace,
+        descriptors["render_manifest"],
+        expected_path=RENDER_MANIFEST_PATH,
+        max_bytes=limits.max_result_object_bytes,
+        label="render manifest",
+    )
+    if (
+        hashlib.sha256(pdf).hexdigest() != composition["output_pdf_sha256"]
+        or hashlib.sha256(manifest).hexdigest() != composition["render_manifest_hash"]
+    ):
+        raise WorkerExecutionError("render composition identity check failed")
+    return pdf, manifest
+
+
+def _read_qa_artifact(
+    workspace: Path,
+    descriptors: Mapping[str, object],
+    limits: WorkerLimits,
+) -> bytes:
+    if set(descriptors) != {"qa"}:
+        raise WorkerExecutionError("QA descriptor set does not match the schema")
+    return _read_fixed_descriptor_artifact(
+        workspace,
+        descriptors["qa"],
+        expected_path=QA_ARTIFACT_PATH,
+        max_bytes=limits.max_result_object_bytes,
+        label="QA artifact",
+    )
+
+
 def child_main(limits: WorkerLimits = DEFAULT_LIMITS) -> int:
     """Restricted child entry point; it accepts exactly one bounded request."""
 
@@ -3794,6 +4829,7 @@ def run_security_probe() -> dict[str, object]:
         "copy_size_verified": False,
         "restricted_token": False,
         "appcontainer_zero_capabilities": False,
+        "less_privileged_appcontainer": False,
         "appcontainer_cleanup": False,
         "external_file_isolation": False,
         "loopback_isolation": False,
@@ -3818,6 +4854,7 @@ def run_security_probe() -> dict[str, object]:
         "provenance": {
             "appcontainer_api_available": _appcontainer_apis_available(),
             "appcontainer_implemented": False,
+            "appcontainer_lpac": False,
             "appcontainer_launch_verified": False,
             "network_isolation_implemented": False,
             "subprocess_fallback": False,
@@ -3838,7 +4875,11 @@ def run_security_probe() -> dict[str, object]:
         *,
         limits: WorkerLimits = DEFAULT_LIMITS,
     ) -> WorkerRunResult:
-        result = run_worker(request, workspace_root, limits=limits)
+        try:
+            result = run_worker(request, workspace_root, limits=limits)
+        except SandboxCleanupError:
+            appcontainer_cleanup_checks.append(False)
+            raise
         cleanup_verified = (
             result.provenance.get("appcontainer_cleanup_verified") is True
         )
@@ -3900,6 +4941,24 @@ def run_security_probe() -> dict[str, object]:
                 inspect_result = inspect.response.result or {}
                 is_appcontainer = bool(inspect_result.get("appcontainer"))
                 zero_capabilities = inspect_result.get("capability_count") == 0
+                queried_lpac = inspect_result.get("less_privileged_appcontainer")
+                lpac_query_supported = (
+                    inspect_result.get("less_privileged_appcontainer_query_supported")
+                    is True
+                )
+                lpac_policy_applied = (
+                    inspect.provenance.get("appcontainer_lpac_policy_applied") is True
+                )
+                is_lpac = bool(
+                    lpac_policy_applied
+                    and is_appcontainer
+                    and zero_capabilities
+                    and (
+                        queried_lpac is True
+                        if lpac_query_supported
+                        else queried_lpac is None
+                    )
+                )
                 minimum["restricted_token"] = bool(
                     (inspect_result.get("restricted_token") or is_appcontainer)
                     and set(inspect_result.get("enabled_privileges", []))
@@ -3908,9 +4967,17 @@ def run_security_probe() -> dict[str, object]:
                 minimum["appcontainer_zero_capabilities"] = bool(
                     is_appcontainer and zero_capabilities
                 )
+                minimum["less_privileged_appcontainer"] = bool(is_lpac)
                 provenance: dict[str, object] = report["provenance"]  # type: ignore[assignment]
                 provenance.update(inspect.provenance)
                 provenance["appcontainer_launch_verified"] = is_appcontainer
+                provenance["appcontainer_lpac"] = is_lpac
+                provenance["lpac_evidence"] = {
+                    "creation_policy_applied": lpac_policy_applied,
+                    "token_query_supported": lpac_query_supported,
+                    "token_query_result": queried_lpac,
+                    "zero_capabilities": zero_capabilities,
+                }
                 provenance["child_token_evidence"] = inspect_result
                 minimum["appcontainer_cleanup"] = bool(
                     inspect.provenance.get("appcontainer_cleanup_verified")

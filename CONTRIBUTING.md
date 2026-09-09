@@ -4,9 +4,12 @@
 # Contributing
 
 This repository is still in controlled development and is not ready to accept
-public contributions. Private code-of-conduct and security reporting channels,
-including an independent alternate channel, must be configured before public
-release.
+public contributions. The maintainer-supplied private reporting route is
+documented in `SECURITY.md` and `CODE_OF_CONDUCT.md`. Under the personal-project
+policy revised on 2026-09-09, one
+route may serve both code-of-conduct and security reports; an independent
+alternate contact is not required. The published policy must describe who
+actually receives reports and any limits on independent review or appeal.
 
 When contribution is enabled, every change must:
 
@@ -31,6 +34,7 @@ affected files, human review and tests, any public-code match and its source and
 license, and confirmation that no confidential material or user paper was sent
 to the tool.
 
-The Contributor Covenant reporting route is intentionally not invented here.
-Public contribution must remain disabled until the release readiness check has
-verified real private primary and alternate channels.
+The configured report address comes from the maintainer's own confirmation,
+not a placeholder or an upstream contact. Public contribution remains disabled
+while the repository's other release gates remain unresolved. The mailbox does
+not imply independently tested delivery, fixed response times, or a moderation team.

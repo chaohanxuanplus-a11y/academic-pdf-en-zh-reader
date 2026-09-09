@@ -13,6 +13,7 @@ from pathlib import Path
 import pypdfium2 as pdfium
 from PIL import Image, ImageChops, ImageDraw
 
+from academic_pdf_en_zh_reader.qa.page_contract import source_manifest_pages
 from academic_pdf_en_zh_reader.rendering.page_geometry import A4_WIDTH_MPT
 from academic_pdf_en_zh_reader.rendering.vector_compose import (
     compose_source_pages_to_a3,
@@ -215,6 +216,10 @@ def audit_full_page_rasters(
         ):
             raise RasterQaError("RASTER_PAGE_BINDING_INVALID")
         scale = policy.dpi / 72
+        try:
+            source_backed = source_manifest_pages(mappings)
+        except ValueError as exc:
+            raise RasterQaError("RASTER_PAGE_BINDING_INVALID") from exc
         rasterized = 0
         changed_total = 0
         equivalent = True
@@ -222,6 +227,29 @@ def audit_full_page_rasters(
         for output_index, (mapping, plan_page) in enumerate(
             zip(mappings, plan_pages, strict=True)
         ):
+            if (
+                mapping.get("output_page_number") != output_index + 1
+                or mapping.get("page_kind") != plan_page.get("page_kind")
+                or mapping.get("source_page_number")
+                != plan_page.get("source_page_number")
+                or mapping.get("overlay_page_plan_hash")
+                != plan_page.get("page_plan_hash")
+            ):
+                raise RasterQaError("RASTER_PAGE_BINDING_INVALID")
+            if output_index >= len(source_backed):
+                output_image = _render_page(output_document, output_index, scale=scale)
+                try:
+                    if (
+                        output_image.width * output_image.height
+                        > policy.max_pixels_per_page
+                    ):
+                        raise RasterQaError("RASTER_PIXEL_LIMIT")
+                    if not _page_sane(output_image, policy):
+                        sane = False
+                    rasterized += 1
+                finally:
+                    output_image.close()
+                continue
             source_index = int(mapping["source_page_number"]) - 1
             if not 0 <= source_index < len(source_document):
                 raise RasterQaError("RASTER_PAGE_BINDING_INVALID")

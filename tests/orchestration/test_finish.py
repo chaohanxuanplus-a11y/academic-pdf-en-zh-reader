@@ -38,6 +38,28 @@ from academic_pdf_en_zh_reader.job.storage import (
 ROOT = Path(__file__).resolve().parents[2]
 
 
+@pytest.fixture(autouse=True)
+def _explicit_in_process_worker_test_adapter(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Keep cross-platform unit fixtures explicit; production has no fallback."""
+
+    from academic_pdf_en_zh_reader.orchestration import finish as finish_module
+    from academic_pdf_en_zh_reader.qa.persist import validate_and_persist_qa
+    from academic_pdf_en_zh_reader.rendering.compose import compose_bilingual_pdf
+
+    monkeypatch.setattr(
+        finish_module,
+        "render_bilingual_pdf_in_worker",
+        compose_bilingual_pdf,
+    )
+    monkeypatch.setattr(
+        finish_module,
+        "validate_qa_in_worker",
+        validate_and_persist_qa,
+    )
+
+
 @dataclass(frozen=True)
 class FinishFixture:
     managed_root: Path
@@ -552,7 +574,11 @@ def test_finish_advances_every_stage_and_uses_non_hardcoded_typography(
 
     result = _finish(fixture, retain_debug=True, ttl_seconds=60)
 
-    assert result == {"status": "ok", "code": "FINISH_OK"}
+    assert result == {
+        "status": "ok",
+        "code": "FINISH_OK",
+        "notices": ["DISCLAIMER_PAGE_APPENDED"],
+    }
     state = load_job_state(fixture.job_root / "job-state.json")
     assert [record.stage for record in state.history] == list(JobStage)
     source = json.loads((fixture.job_root / "source.json").read_text(encoding="utf-8"))
@@ -596,7 +622,7 @@ def test_finish_cleans_candidate_when_rendered_state_cas_fails(
     fixture = _finish_fixture(tmp_path, job_id="finish-render-cas")
     real_commit = finish_module._commit_stage
     composed = False
-    real_compose = finish_module.compose_bilingual_pdf
+    real_compose = finish_module.render_bilingual_pdf_in_worker
 
     def compose(*args: object, **kwargs: object):
         nonlocal composed
@@ -609,7 +635,7 @@ def test_finish_cleans_candidate_when_rendered_state_cas_fails(
             raise finish_module.FinishJobError("STATE_CAS_FAILED", "render")
         return real_commit(state, target_stage, artifacts, state_path)
 
-    monkeypatch.setattr(finish_module, "compose_bilingual_pdf", compose)
+    monkeypatch.setattr(finish_module, "render_bilingual_pdf_in_worker", compose)
     monkeypatch.setattr(finish_module, "_commit_stage", commit)
 
     with pytest.raises(finish_module.FinishJobError) as captured:
@@ -630,17 +656,21 @@ def test_finish_never_exposes_an_untrusted_render_exception_code(
     fixture = _finish_fixture(tmp_path, job_id="finish-render-code")
 
     class LeakyRenderError(RuntimeError):
-        code = "RENDER_FAILED private-path/paper.pdf"
+        code = "ATTACKER_CHOSEN_CODE"
 
     def fail_render(**_kwargs: object) -> None:
         raise LeakyRenderError("paper text")
 
-    monkeypatch.setattr(finish_module, "compose_bilingual_pdf", fail_render)
+    monkeypatch.setattr(
+        finish_module,
+        "render_bilingual_pdf_in_worker",
+        fail_render,
+    )
     with pytest.raises(finish_module.FinishJobError) as captured:
         _finish(fixture)
 
     assert captured.value.code == "RENDER_FAILED"
-    assert "private-path" not in str(captured.value)
+    assert "ATTACKER_CHOSEN_CODE" not in str(captured.value)
     assert "paper text" not in str(captured.value)
     assert not fixture.job_root.exists()
     assert not fixture.output_pdf.exists()
@@ -656,7 +686,7 @@ def test_finish_qa_failure_publishes_no_output(
     fixture = _finish_fixture(tmp_path, job_id="finish-qa-failure")
     monkeypatch.setattr(
         finish_module,
-        "validate_and_persist_qa",
+        "validate_qa_in_worker",
         lambda **_kwargs: QaCommitResult(
             code="QA_FAILED",
             passed=False,
@@ -670,6 +700,54 @@ def test_finish_qa_failure_publishes_no_output(
         _finish(fixture)
 
     assert captured.value.code == "QA_FAILED"
+    assert not fixture.job_root.exists()
+    assert not fixture.output_pdf.exists()
+
+
+def test_finish_preserves_qa_sandbox_contract_failure(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from academic_pdf_en_zh_reader.orchestration import finish as finish_module
+    from academic_pdf_en_zh_reader.qa.persist import QaCommitError
+
+    fixture = _finish_fixture(tmp_path, job_id="finish-qa-sandbox-contract")
+
+    def fail_qa(**_kwargs: object) -> None:
+        raise QaCommitError("SANDBOX_CONTRACT_UNVERIFIED")
+
+    monkeypatch.setattr(finish_module, "validate_qa_in_worker", fail_qa)
+
+    with pytest.raises(finish_module.FinishJobError) as captured:
+        _finish(fixture)
+
+    assert captured.value.code == "SANDBOX_CONTRACT_UNVERIFIED"
+    assert not fixture.job_root.exists()
+    assert not fixture.output_pdf.exists()
+
+
+def test_finish_never_exposes_an_untrusted_qa_exception_code(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from academic_pdf_en_zh_reader.orchestration import finish as finish_module
+
+    fixture = _finish_fixture(tmp_path, job_id="finish-qa-code")
+
+    class LeakyQaError(RuntimeError):
+        code = "ATTACKER_CHOSEN_CODE"
+
+    def fail_qa(**_kwargs: object) -> None:
+        raise LeakyQaError("paper text")
+
+    monkeypatch.setattr(finish_module, "validate_qa_in_worker", fail_qa)
+
+    with pytest.raises(finish_module.FinishJobError) as captured:
+        _finish(fixture)
+
+    assert captured.value.code == "QA_COMMIT_FAILED"
+    assert "ATTACKER_CHOSEN_CODE" not in str(captured.value)
+    assert "paper text" not in str(captured.value)
     assert not fixture.job_root.exists()
     assert not fixture.output_pdf.exists()
 
@@ -803,7 +881,11 @@ def test_finish_default_success_delivers_only_one_pdf_and_cleans_job(
 
     result = _finish(fixture)
 
-    assert result == {"status": "ok", "code": "FINISH_OK"}
+    assert result == {
+        "status": "ok",
+        "code": "FINISH_OK",
+        "notices": ["DISCLAIMER_PAGE_APPENDED"],
+    }
     assert fixture.output_pdf.is_file()
     assert list(fixture.output_pdf.parent.iterdir()) == [fixture.output_pdf]
     assert not fixture.job_root.exists()
@@ -843,6 +925,42 @@ def test_finish_job_wrapper_success_is_silent(
     main.__globals__["finish_managed_job"] = lambda **_kwargs: {
         "status": "ok",
         "code": "FINISH_OK",
+    }
+
+    assert main(_wrapper_arguments()) == 0
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert captured.err == ""
+
+
+def test_finish_job_wrapper_reports_appended_disclaimer_without_private_data(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    module = _wrapper_globals()
+    main = module["main"]
+    main.__globals__["finish_managed_job"] = lambda **_kwargs: {
+        "status": "ok",
+        "code": "FINISH_OK",
+        "notices": ["DISCLAIMER_PAGE_APPENDED"],
+    }
+
+    assert main(_wrapper_arguments()) == 0
+    captured = capsys.readouterr()
+    assert captured.out == "原末页无足够安全空间，已在文件末尾追加责任声明页。\n"
+    assert captured.err == ""
+    assert "private-" not in captured.out
+    assert "FINISH_OK" not in captured.out
+
+
+def test_finish_job_wrapper_does_not_echo_unknown_notice_content(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    module = _wrapper_globals()
+    main = module["main"]
+    main.__globals__["finish_managed_job"] = lambda **_kwargs: {
+        "status": "ok",
+        "code": "FINISH_OK",
+        "notices": ["private-paper-data"],
     }
 
     assert main(_wrapper_arguments()) == 0

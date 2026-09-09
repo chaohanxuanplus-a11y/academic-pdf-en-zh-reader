@@ -76,6 +76,13 @@ def test_private_python_runtime_includes_consoleless_entrypoint(
 
     assert (runtime.root / "python.exe").is_file()
     assert (runtime.root / "pythonw.exe").is_file()
+    path_config = runtime.root / (
+        f"python{windows_worker.sys.version_info.major}"
+        f"{windows_worker.sys.version_info.minor}._pth"
+    )
+    assert path_config.read_bytes() == b"Lib\nDLLs\n"
+    assert path_config.stat().st_size <= runtime.total_bytes
+    assert runtime.file_count >= 1
     command = windows_worker._child_command(
         tmp_path,
         runtime.root / "pythonw.exe",

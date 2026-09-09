@@ -10,6 +10,7 @@ path = [
   "assets/branding/brand-manifest.json",
   "compliance/dependencies.json",
   "compliance/external-tools.json",
+  "compliance/evidence/public/brand-use-declaration-20260910.md",
   "compliance/github-actions.json",
   "compliance/project-identity.json",
   "compliance/release-status.json",
@@ -25,8 +26,8 @@ SPDX-License-Identifier = "Apache-2.0"
 [[annotations]]
 path = "assets/branding/hanhai-wencai.png"
 precedence = "override"
-SPDX-FileCopyrightText = "NOASSERTION"
-SPDX-License-Identifier = "LicenseRef-HanhaiWencai-Unreleased"
+SPDX-FileCopyrightText = "2026 chaohanxuan"
+SPDX-License-Identifier = "LicenseRef-HanhaiWencai-SkillOutputOnly"
 
 [[annotations]]
 path = "assets/font-manifest.json"
