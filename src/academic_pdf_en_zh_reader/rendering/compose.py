@@ -602,6 +602,14 @@ def compose_bilingual_pdf(
             "PLAN_COMPLEXITY_LIMIT",
             "overlay limits are invalid",
         )
+    # A fresh worker has no parent-side ReportLab font registrations. Validate
+    # the pinned bytes and frozen fingerprint before measuring any plan text.
+    font_manifest_hash, font_files = _font_contract(
+        artifacts["frame-graph"],
+        overlay_plan,
+        policy_inputs,
+        Path(font_manifest_path),
+    )
     try:
         expected_plan = build_overlay_plan(
             artifacts["source"],
@@ -624,12 +632,6 @@ def compose_bilingual_pdf(
             "OVERLAY_PLAN_MISMATCH",
             "overlay plan differs from trusted parent recomputation",
         )
-    font_manifest_hash, font_files = _font_contract(
-        artifacts["frame-graph"],
-        expected_plan,
-        policy_inputs,
-        Path(font_manifest_path),
-    )
     try:
         overlay_pdf = _render_validated_overlay_pdf(expected_plan)
         overlay_reader = PdfReader(BytesIO(overlay_pdf), strict=True)

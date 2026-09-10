@@ -258,6 +258,40 @@ def _compose(
     return result, output, manifest, artifacts, plan, policies, packed
 
 
+def test_composition_registers_fonts_before_recomputing_plan_in_fresh_worker(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from reportlab.pdfbase import pdfmetrics
+
+    source_path, artifacts, policies, packed = _inputs(tmp_path)
+    plan = packed.pop("_overlay_plan")
+    # A new child has none of the parent's font-registration side effects.
+    monkeypatch.setattr(pdfmetrics, "_fonts", {})
+    monkeypatch.setattr(pdfmetrics, "_dynFaceNames", {})
+    job_root = tmp_path / "fresh-worker"
+    job_root.mkdir()
+    output = job_root / "candidate.pdf"
+    result = compose_bilingual_pdf(
+        source_pdf_path=source_path,
+        source=artifacts[0],
+        units=artifacts[1],
+        translation=artifacts[2],
+        review=artifacts[3],
+        annotations=artifacts[4],
+        frame_graph=artifacts[5],
+        layout=artifacts[6],
+        finalization_receipt=packed,
+        policy_inputs=policies,
+        overlay_plan=plan,
+        expected_finalization_receipt_hash=sha256_canonical(packed),
+        expected_overlay_plan_hash=plan["overlay_plan_hash"],
+        job_root=job_root,
+        output_pdf_path=output,
+        render_manifest_path=job_root / "render-manifest.json",
+    )
+    assert result.page_count == len(PdfReader(output).pages)
+
+
 def test_vector_overlay_and_a3_composition_are_exact_and_deterministic(
     tmp_path: Path,
 ) -> None:
