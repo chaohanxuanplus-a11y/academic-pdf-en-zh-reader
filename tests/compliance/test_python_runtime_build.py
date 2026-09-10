@@ -369,6 +369,38 @@ def test_successful_logged_build_does_not_emit_failure_tail(
     assert capsys.readouterr().err == ""
 
 
+@pytest.mark.parametrize(
+    "name", ["GIT_DIR", "GIT_WORK_TREE", "GIT_COMMON_DIR", "GIT_INDEX_FILE", "git_dir"]
+)
+def test_source_build_cannot_inherit_explicit_parent_git_context(tmp_path, name):
+    source = tmp_path / "archive/cpython"
+    source.mkdir(parents=True)
+    environment = {"PATH": "installed-tools", "CI": "true", name: "parent-repository"}
+    original = dict(environment)
+    isolated = recipe._source_build_environment(environment, source)
+    assert name not in isolated
+    assert isolated["GIT_CEILING_DIRECTORIES"] == str(source.parent.resolve())
+    assert isolated["PATH"] == "installed-tools" and isolated["CI"] == "true"
+    assert environment == original
+
+
+def test_source_build_replaces_inherited_ceiling_with_checked_parent(tmp_path):
+    source = tmp_path / "archive/cpython"
+    source.mkdir(parents=True)
+    environment = {"git_ceiling_directories": "unrelated-parent"}
+    isolated = recipe._source_build_environment(environment, source)
+    assert isolated == {"GIT_CEILING_DIRECTORIES": str(source.parent.resolve())}
+    assert environment == {"git_ceiling_directories": "unrelated-parent"}
+
+
+def test_source_build_git_boundary_rejects_reparse_source(tmp_path, monkeypatch):
+    source = tmp_path / "cpython"
+    source.mkdir()
+    monkeypatch.setattr(recipe, "_is_reparse", lambda path: path == source)
+    with pytest.raises(ValueError, match="reparse"):
+        recipe._source_build_environment({}, source)
+
+
 def test_archive_count_limit(tmp_path: Path, monkeypatch) -> None:
     archive = tmp_path / "source.zip"
     with zipfile.ZipFile(archive, "w") as handle:

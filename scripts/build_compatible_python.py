@@ -506,6 +506,25 @@ def _file_manifest(directory: Path) -> list[dict[str, object]]:
     return result
 
 
+def _source_build_environment(environment: dict, source: Path) -> dict:
+    """Keep release-archive tools from discovering an unrelated parent Git repo."""
+    source = _checked_path(source)
+    inherited_git_context = {
+        "GIT_DIR",
+        "GIT_WORK_TREE",
+        "GIT_COMMON_DIR",
+        "GIT_INDEX_FILE",
+        "GIT_CEILING_DIRECTORIES",
+    }
+    isolated = {
+        key: value
+        for key, value in environment.items()
+        if key.upper() not in inherited_git_context
+    }
+    isolated["GIT_CEILING_DIRECTORIES"] = str(source.parent)
+    return isolated
+
+
 def build(output_dir: Path, work_dir: Path | None = None) -> Path:
     if os.name != "nt" or platform.machine().casefold() not in {"amd64", "x86_64"}:
         raise RuntimeError("this recipe requires Windows x64")
@@ -540,6 +559,16 @@ def build(output_dir: Path, work_dir: Path | None = None) -> Path:
                 if digest.hexdigest() != record["sqlite3_c_sha3_256"]:
                     raise ValueError("SQLite source differs from official release hash")
         source = work / "cpython"
+        environment = _source_build_environment(environment, source)
+        upstream_sbom_files = [
+            {"path": name, "sha256": _sha256(source / name)}
+            for name in ("Misc/sbom.spdx.json", "Misc/externals.spdx.json")
+        ]
+        print(
+            "CPython release archive: preserve bundled source SBOMs; "
+            "parent Git discovery is isolated, upstream regeneration rules unchanged.",
+            flush=True,
+        )
         patches = [
             _patch_resources(source / name)
             for name in ("PC/python_nt.rc", "PC/sqlite3.rc")
@@ -567,6 +596,11 @@ def build(output_dir: Path, work_dir: Path | None = None) -> Path:
             if target in EXTENSIONS:
                 arguments.append("/p:BuildProjectReferences=false")
             _run(arguments, env=environment, log=work / f"{target}-build.log")
+        if any(
+            _sha256(source / item["path"]) != item["sha256"]
+            for item in upstream_sbom_files
+        ):
+            raise ValueError("upstream release-archive SBOM unexpectedly changed")
         stage = work / "runtime-stage"
         _assemble(source, work, stage)
         smoke = _run(
@@ -608,6 +642,14 @@ def build(output_dir: Path, work_dir: Path | None = None) -> Path:
             "sources": list(SOURCES),
             "source_changes": patches,
             "unchanged_executable_resources": executable_resources,
+            "upstream_source_sbom": {
+                "mode": "preserved-official-release-archive-not-regenerated",
+                "scope": (
+                    "Upstream source archive only; "
+                    "sources/targets describe this minimal runtime."
+                ),
+                "files": upstream_sbom_files,
+            },
             "targets": list(TARGETS),
             "build_properties": list(BUILD_PROPERTIES),
             "recipe_sha256": _sha256(Path(__file__)),
