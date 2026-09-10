@@ -31,6 +31,7 @@ from academic_pdf_en_zh_reader.security.worker_protocol import (
     ProtocolError,
     WorkerRequest,
 )
+from tests.security.restricted_adapter_runtime import prepare_restricted_probe_runtime
 from tests.security.restricted_loader_diagnostics import (
     emit_restricted_loader_diagnostics,
 )
@@ -75,10 +76,13 @@ def workspace(tmp_path: Path) -> Path:
 
 
 @pytest.fixture
-def restricted_job_adapter(monkeypatch: pytest.MonkeyPatch) -> None:
+def restricted_job_adapter(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
     """Exercise the explicit non-AppContainer adapter in this test group."""
 
     monkeypatch.setattr(windows_worker, "_appcontainer_apis_available", lambda: False)
+    with prepare_restricted_probe_runtime(tmp_path / "adapter-runtime") as runtime:
+        monkeypatch.setattr(f"{__name__}.run_worker", runtime.run_probe)
+        yield
 
 
 def test_worker_uses_restricted_token_and_enforced_job_limits(
