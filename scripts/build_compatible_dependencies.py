@@ -310,6 +310,7 @@ def _run(
             check=False,
         )
     if result.returncode:
+        shared._print_build_failure_tail(log)
         raise RuntimeError(f"{label} exited {result.returncode}; see {log}")
     return log.read_text(encoding="utf-8", errors="replace")
 

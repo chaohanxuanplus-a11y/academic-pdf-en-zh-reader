@@ -291,3 +291,42 @@ def test_freetype_fix_fails_closed_without_partial_rewrite(tmp_path, kind) -> No
     with pytest.raises(ValueError, match="FreeType"):
         builder._apply_freetype_fix(roots, inventory)
     assert source.read_bytes() == before
+
+
+@pytest.mark.parametrize("failed", [False, True])
+def test_dependency_build_reports_bounded_failure_log_only_after_close(
+    tmp_path, monkeypatch, capsys, failed
+):
+    log = tmp_path / "pillow-build-wheel.log"
+    payload = (b"earlier output\n" * 2000) + b"fatal error C1083: probe\n"
+    observed = {}
+    original_open = Path.open
+
+    def checked_open(path, mode="r", *args, **kwargs):
+        if path == log and mode in {"rb", "r"}:
+            assert observed["writer"].closed
+        return original_open(path, mode, *args, **kwargs)
+
+    def fake_run(arguments, **kwargs):
+        observed["writer"] = kwargs["stdout"]
+        kwargs["stdout"].buffer.write(payload)
+        return SimpleNamespace(returncode=7 if failed else 0)
+
+    monkeypatch.setattr(Path, "open", checked_open)
+    monkeypatch.setattr(builder.subprocess, "run", fake_run)
+    monkeypatch.setattr(builder.subprocess, "CREATE_NO_WINDOW", 0, raising=False)
+    arguments = (["fixed-compiler"], tmp_path, "pillow-build-wheel")
+    if failed:
+        with pytest.raises(RuntimeError, match="pillow-build-wheel exited 7"):
+            builder._run(*arguments, env={"DO_NOT_DUMP": "secret-value"})
+    else:
+        result = builder._run(*arguments, env={})
+        assert result.endswith(payload.decode())
+    diagnostic = capsys.readouterr().err
+    assert "secret-value" not in diagnostic
+    if failed:
+        assert diagnostic.endswith("fatal error C1083: probe\n")
+        assert len(diagnostic.encode("utf-8")) <= 16 * 1024
+        assert len(diagnostic.splitlines()) <= 80
+    else:
+        assert diagnostic == ""

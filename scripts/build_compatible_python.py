@@ -24,6 +24,7 @@ import tarfile
 import tempfile
 import urllib.request
 import zipfile
+from contextlib import suppress
 from datetime import UTC, datetime
 from pathlib import Path, PurePosixPath
 
@@ -280,19 +281,42 @@ def _patch_resources(resource: Path) -> dict[str, str]:
     }
 
 
+def _print_build_failure_tail(log: Path) -> None:
+    """Emit at most 16 KiB / 80 lines after the fixed build's log writer closes."""
+    limit = 16 * 1024
+    try:
+        with log.open("rb") as source:
+            source.seek(0, os.SEEK_END)
+            source.seek(max(0, source.tell() - limit))
+            raw = source.read(limit)
+        tail = "\n".join(raw.decode("utf-8", errors="replace").splitlines()[-80:])
+        # Replacement characters may expand invalid input; bound UTF-8 output too.
+        # Reserve the final newline and Windows CRLF expansion for up to 80 lines.
+        tail = tail.encode("utf-8")[-(limit - 81) :].decode("utf-8", errors="ignore")
+    except OSError:
+        tail = "Build failure log tail is unavailable."
+    # Failure to print diagnostics must not replace the build failure.
+    with suppress(OSError, UnicodeError, ValueError):
+        print(tail, file=sys.stderr, flush=True)
+
+
 def _run(arguments: list[str], *, env=None, log: Path | None = None) -> str:
     options = {"creationflags": subprocess.CREATE_NO_WINDOW} if os.name == "nt" else {}
     if log is not None:
-        with log.open("xb") as output:
-            subprocess.run(
-                arguments,
-                check=True,
-                stdin=subprocess.DEVNULL,
-                stdout=output,
-                stderr=subprocess.STDOUT,
-                env=env,
-                **options,
-            )
+        try:
+            with log.open("xb") as output:
+                subprocess.run(
+                    arguments,
+                    check=True,
+                    stdin=subprocess.DEVNULL,
+                    stdout=output,
+                    stderr=subprocess.STDOUT,
+                    env=env,
+                    **options,
+                )
+        except subprocess.CalledProcessError:
+            _print_build_failure_tail(log)
+            raise
         return ""
     return subprocess.run(
         arguments,

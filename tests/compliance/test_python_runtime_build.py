@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import io
 import json
+import subprocess
 import tarfile
 import zipfile
 from pathlib import Path
@@ -310,6 +311,62 @@ def test_toolchain_still_requires_exact_sdk_tools(tmp_path, monkeypatch):
     (tmp_path / "Windows Kits/10/bin" / recipe.SDK_VERSION / "x64/mt.exe").unlink()
     with pytest.raises(FileNotFoundError, match="build tool"):
         recipe._toolchain()
+
+
+@pytest.mark.parametrize("kind", ["short", "lines", "bytes", "invalid", "unreadable"])
+def test_failed_build_emits_bounded_closed_log_and_preserves_exception(
+    tmp_path, monkeypatch, capsys, kind
+):
+    log = tmp_path / "python-build.log"
+    end = b"MSB3073: native-build-probe failed\n"
+    prefixes = {
+        "short": b"",
+        "lines": b"old build line\n" * 200,
+        "bytes": b"x" * 100_000,
+        "invalid": b"\xff" * 100_000,
+        "unreadable": b"",
+    }
+    content = prefixes[kind] + end
+    failure = subprocess.CalledProcessError(7, ["fixed-msbuild"])
+    observed = {}
+    original_open = Path.open
+
+    def checked_open(path, mode="r", *args, **kwargs):
+        if path == log and mode == "rb":
+            assert observed["writer"].closed
+            if kind == "unreadable":
+                raise PermissionError("diagnostic log is unavailable")
+        return original_open(path, mode, *args, **kwargs)
+
+    def failed_run(arguments, **kwargs):
+        observed["writer"] = kwargs["stdout"]
+        kwargs["stdout"].write(content)
+        raise failure
+
+    monkeypatch.setattr(Path, "open", checked_open)
+    monkeypatch.setattr(recipe.subprocess, "run", failed_run)
+    with pytest.raises(subprocess.CalledProcessError) as caught:
+        recipe._run(["fixed-msbuild"], env={"DO_NOT_DUMP": "secret-value"}, log=log)
+    assert caught.value is failure
+    diagnostic = capsys.readouterr().err
+    assert diagnostic
+    assert len(diagnostic.encode("utf-8")) <= 16 * 1024
+    assert len(diagnostic.splitlines()) <= 80
+    assert "secret-value" not in diagnostic
+    if kind != "unreadable":
+        assert diagnostic.endswith(end.decode())
+        assert log.read_bytes() == content
+
+
+def test_successful_logged_build_does_not_emit_failure_tail(
+    tmp_path, monkeypatch, capsys
+):
+    def successful_run(arguments, **kwargs):
+        kwargs["stdout"].write(b"successful output\n")
+
+    monkeypatch.setattr(recipe.subprocess, "run", successful_run)
+    assert recipe._run(["fixed-msbuild"], log=tmp_path / "build.log") == ""
+    assert capsys.readouterr().err == ""
 
 
 def test_archive_count_limit(tmp_path: Path, monkeypatch) -> None:
