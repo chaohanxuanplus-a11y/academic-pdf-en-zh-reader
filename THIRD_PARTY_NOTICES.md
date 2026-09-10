@@ -156,11 +156,55 @@ High-attention binary boundaries are:
 - `pypdfium2`: Python bindings plus a PDFium binary and its build-license
   bundle. Only standard non-V8/XFA wheels may be used; selected platform hashes
   and `BUILD_LICENSES` must enter release evidence.
-- `Pillow`: official wheels contain native image-codec components. v1 does not
-  redistribute wheels; any future offline bundle requires a platform-specific
-  linked-library and notice audit.
+- `Pillow`: the separate Windows compatibility archive supplies a minimal
+  project-built wheel with the exact linked-library notices described below;
+  it does not redistribute an unreviewed upstream codec bundle.
 - `cryptography`, `cffi`, and `rpds-py`: native wheels must appear in the
   platform SBOM and are not vendored by this project.
+
+## Separate Windows compatibility wheels
+
+`compliance/python-dependencies.json` pins all source/build inputs and the
+project-specific configuration. The separate dependency archive contains
+fontTools 4.63.0 and charset-normalizer 3.5.1 as unmodified official pure-Python
+wheels, retaining their original license files (including fontTools'
+`LICENSE.external`). Their exact hashes are also in the upstream `uv.lock`.
+The Pillow 12.3.0 wheel is built from the pinned source, not presented as an
+official upstream binary. Its own manifest records its actual bytes; original
+PyPI wheel hashes do not describe this build.
+
+The Pillow wheel retains its MIT-CMU license, the pythoncapi-compat 0BSD notice,
+the original Tcl/Tk header notice from `src/Tk/_tkmini.h`, and the original
+notices for its statically built native components:
+
+- libjpeg-turbo 3.1.4.1: original `LICENSE.md` and `README.ijg` (IJG and the
+  accompanying BSD-3-Clause text). This software is based in part on the work
+  of the Independent JPEG Group.
+- zlib-ng 2.3.3: the original Zlib notice.
+- FreeType 2.14.3: the FreeType License (`FTL`) is selected, not the alternative
+  GPL license. This software is based in part on the work of the FreeType Team
+  ([FreeType Project](https://freetype.org)). The original FTL and applicable
+  bundled-code notices are preserved, including its embedded zlib notice.
+
+In addition to build configuration and notice metadata, FreeType's
+`src/truetype/ttgxvar.c` includes only the upstream `TT_Get_Var_Design` bounds
+fix from commit `5a280ecde6f324de0d226261036e736e0cb49a71`
+([official change](https://github.com/freetype/freetype/commit/5a280ecde6f324de0d226261036e736e0cb49a71)).
+The pinned patch bytes and original/modified file hashes are recorded in the
+source inventory and build manifest. No other C implementation is changed. The build
+omits DLL manifest generation before linking while retaining x64 ASLR, DEP,
+high-entropy ASLR and CFG; no installed or signed DLL is edited. PNG, JPEG,
+FreeType and the project's image primitives are supported. Optional codecs,
+Raqm shaping, color-font PNG, and Brotli fonts are not supplied; libjpeg SIMD is
+disabled. This is a project-specific support scope, not a restriction on rights
+granted by the original licenses and not a complete Pillow replacement.
+
+The pinned setuptools, pybind11 and CMake wheels are build tools only and are
+not distributed. Visual Studio and the SDK are also not distributed. A release
+must preserve the wheel licenses, build manifest, verified installation receipt,
+dependency SBOM, and release checksums. Local build success does not replace the
+same-run, same-SHA production safety gate, and no upstream endorsement or
+bit-identical compiler-build guarantee is claimed.
 
 `uv` and the REUSE CLI are isolated external development tools and are not
 runtime dependencies or release assets. The REUSE CLI is GPL-3.0-or-later with

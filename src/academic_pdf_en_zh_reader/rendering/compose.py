@@ -63,6 +63,7 @@ from academic_pdf_en_zh_reader.schema.validate import (
     SchemaValidationError,
     validate_artifact,
 )
+from academic_pdf_en_zh_reader.security.runtime_paths import resolve_runtime_path
 from academic_pdf_en_zh_reader.typography.font_registry import (
     DEFAULT_FONT_MANIFEST,
     PROJECT_ROOT,
@@ -135,11 +136,11 @@ def _validate_job_paths(
     render_manifest_path: Path,
 ) -> None:
     try:
-        root = job_root.resolve(strict=True)
-        source = source_pdf_path.resolve(strict=True)
-        output_parent = output_pdf_path.parent.resolve(strict=True)
-        manifest_parent = render_manifest_path.parent.resolve(strict=True)
-    except OSError as exc:
+        root = resolve_runtime_path(job_root, strict=True)
+        source = resolve_runtime_path(source_pdf_path, strict=True)
+        output_parent = resolve_runtime_path(output_pdf_path.parent, strict=True)
+        manifest_parent = resolve_runtime_path(render_manifest_path.parent, strict=True)
+    except (OSError, ValueError) as exc:
         raise CompositionError("RENDER_PATH_INVALID", "render path is invalid") from exc
     if (
         not root.is_dir()
@@ -149,7 +150,11 @@ def _validate_job_paths(
         or output_pdf_path.name in {"", ".", ".."}
         or render_manifest_path.name in {"", ".", ".."}
         or output_pdf_path == render_manifest_path
-        or source in {output_pdf_path.resolve(), render_manifest_path.resolve()}
+        or source
+        in {
+            output_parent / output_pdf_path.name,
+            manifest_parent / render_manifest_path.name,
+        }
     ):
         raise CompositionError(
             "RENDER_PATH_INVALID",
@@ -561,7 +566,7 @@ def compose_bilingual_pdf(
     output_path = Path(output_pdf_path)
     manifest_path = Path(render_manifest_path)
     _validate_job_paths(root, source_path, output_path, manifest_path)
-    root = root.resolve(strict=True)
+    root = resolve_runtime_path(root, strict=True)
     output_path = root / output_path.name
     manifest_path = root / manifest_path.name
     artifacts = {

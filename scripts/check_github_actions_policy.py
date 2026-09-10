@@ -169,13 +169,53 @@ def _compatible_runtime_errors(relative_path: str, body: str) -> list[str]:
         errors.append(
             f"{relative_path}: tested runtime closure must disable bytecode writes"
         )
-    for script in scripts:
-        if script.startswith("uv run ") and not script.startswith(
-            'uv run --python ".tools/compatible-python/python.exe" --frozen '
-        ):
+    dependency_build = (
+        "python scripts/build_compatible_dependencies.py "
+        "--output-dir .tools/compatible-dependencies"
+    )
+    dependency_install = (
+        "python scripts/install_compatible_dependencies.py "
+        "--wheelhouse .tools/compatible-dependencies "
+        "--python .venv/Scripts/python.exe"
+    )
+    dependency_verify = dependency_install + " --verify-only"
+    preparation = (build, sync, dependency_build, dependency_install, dependency_verify)
+    if any(scripts.count(command) != 1 for command in preparation):
+        errors.append(
+            f"{relative_path}: Windows must build, install and verify the "
+            "pinned dependency overlay exactly once"
+        )
+    elif [scripts.index(command) for command in preparation] != sorted(
+        scripts.index(command) for command in preparation
+    ):
+        errors.append(
+            f"{relative_path}: dependency build, installation and verification "
+            "must follow the frozen synchronization in order"
+        )
+    for index, script in enumerate(scripts):
+        if re.search(r"\buv(?:\.exe)?\s+sync\b", script) and script != sync:
             errors.append(
-                f"{relative_path}: Windows tests must select the compatible runtime"
+                f"{relative_path}: Windows must not resynchronize "
+                "the dependency overlay"
             )
+        for line in script.splitlines():
+            if "uv run " not in line:
+                continue
+            if not line.strip().startswith(
+                'uv run --python ".tools/compatible-python/python.exe" '
+                "--frozen --no-sync "
+            ):
+                errors.append(
+                    f"{relative_path}: Windows tests must select the compatible "
+                    "runtime without synchronization"
+                )
+            if dependency_verify not in scripts or index <= scripts.index(
+                dependency_verify
+            ):
+                errors.append(
+                    f"{relative_path}: dependency verification must precede every "
+                    "Windows test command"
+                )
     return errors
 
 
@@ -262,6 +302,12 @@ def validate_workflow_text(
                 relative_path, windows.group("body") if windows else ""
             )
         )
+        if windows is not None:
+            errors.extend(
+                _release_job_bypass_errors(
+                    relative_path, "windows-runtime", windows.group("body")
+                )
+            )
         current_gate = "check_release_readiness.py --mode current"
         if current_gate not in text:
             errors.append(f"{relative_path}: CI must use the current readiness mode")
@@ -356,7 +402,8 @@ def validate_workflow_text(
                     "the CPython 3.12.10 bootstrap"
                 )
             probe_command = (
-                'uv run --python ".tools/compatible-python/python.exe" --frozen '
+                'uv run --python ".tools/compatible-python/python.exe" '
+                "--frozen --no-sync "
                 "python scripts/probe_worker_sandbox.py"
             )
             if probe_command not in windows_scripts:
@@ -366,7 +413,7 @@ def validate_workflow_text(
                 )
             finish_command = (
                 'uv run --python ".tools/compatible-python/python.exe" '
-                "--frozen pytest -q "
+                "--frozen --no-sync pytest -q "
                 "tests/security/test_finish_worker_boundary.py::"
                 "test_production_finish_completes_render_and_qa_in_lpac"
             )
@@ -400,6 +447,40 @@ def validate_workflow_text(
                 errors.append(
                     f"{relative_path}: tested runtime upload must be "
                     "exact and fail closed"
+                )
+            dependency_package = (
+                "python scripts/package_compatible_dependencies.py "
+                "--wheelhouse .tools/compatible-dependencies "
+                "--python .venv/Scripts/python.exe "
+                "--output-dir dist/windows-dependencies"
+            )
+            if windows_scripts.count(dependency_package) != 1:
+                errors.append(
+                    f"{relative_path}: release must package and reverify the "
+                    "tested dependency overlay exactly once"
+                )
+            elif finish_command in windows_scripts and windows_scripts.index(
+                dependency_package
+            ) < windows_scripts.index(finish_command):
+                errors.append(
+                    f"{relative_path}: dependency packaging must follow "
+                    "the LPAC finish test"
+                )
+            dependency_upload = (
+                "name: tested-windows-dependencies\n"
+                "          path: dist/windows-dependencies/\n"
+                "          if-no-files-found: error"
+            )
+            if windows_body.count(dependency_upload) != 1:
+                errors.append(
+                    f"{relative_path}: tested dependency upload must be exact "
+                    "and fail closed"
+                )
+            elif windows_body.find(dependency_package) > windows_body.find(
+                dependency_upload
+            ):
+                errors.append(
+                    f"{relative_path}: dependency upload must follow verified packaging"
                 )
             trusted_outputs = (
                 "lpac-probe-outcome: ${{ steps.lpac-probe.outcome }}",
@@ -462,11 +543,21 @@ def validate_workflow_text(
                 "          digest-mismatch: error"
             )
             if (
-                build_body.count("actions/download-artifact@") != 1
+                build_body.count("actions/download-artifact@") != 2
                 or download_fields not in build_body
             ):
                 errors.append(
                     f"{relative_path}: runtime download must be exact and fail closed"
+                )
+            dependency_download = (
+                "name: tested-windows-dependencies\n"
+                "          path: dist/release/\n"
+                "          digest-mismatch: error"
+            )
+            if build_body.count(dependency_download) != 1:
+                errors.append(
+                    f"{relative_path}: dependency download must be exact "
+                    "and fail closed"
                 )
             if re.search(
                 r"(?m)^\s+(run-id|github-token|artifact-ids|pattern):", build_body
@@ -485,6 +576,37 @@ def validate_workflow_text(
                         f"{relative_path}: runtime release asset is missing: "
                         f"{required_asset}"
                     )
+            dependency_assets = {
+                "academic-pdf-en-zh-reader-windows-dependencies.zip",
+                "dependencies-artifact.json",
+                "dependencies.spdx.json",
+            }
+            checksum_commands = [
+                line.strip()
+                for script in _run_scripts(build_body)
+                for line in script.splitlines()
+                if line.strip().startswith("sha256sum ")
+            ]
+            if (
+                len(checksum_commands) != 1
+                or not checksum_commands[0].endswith(" > SHA256SUMS")
+                or not dependency_assets.issubset(checksum_commands[0].split())
+            ):
+                errors.append(
+                    f"{relative_path}: dependency archive, receipt and SBOM must "
+                    "all be hashed in SHA256SUMS"
+                )
+            dependency_sbom = (
+                "file: dist/release/"
+                "academic-pdf-en-zh-reader-windows-dependencies.zip\n"
+                "          format: spdx-json\n"
+                "          output-file: dist/release/dependencies.spdx.json"
+            )
+            if build_body.count(dependency_sbom) != 1:
+                errors.append(
+                    f"{relative_path}: release must generate "
+                    "the dependency archive SBOM"
+                )
             if not re.search(
                 r"(?m)^    needs: windows-2025-production-gate\s*$", build_body
             ):
@@ -626,7 +748,8 @@ def validate(root: Path) -> tuple[str, ...]:
             "uv sync --frozen --all-groups",
             "uv sync --frozen --all-groups "
             '--python ".tools/compatible-python/python.exe"',
-            'uv run --python ".tools/compatible-python/python.exe" --frozen pytest -q',
+            'uv run --python ".tools/compatible-python/python.exe" '
+            "--frozen --no-sync pytest -q",
             "test_worker_uses_restricted_token_and_enforced_job_limits",
             "python scripts/probe_worker_sandbox.py",
             "pytest -q",

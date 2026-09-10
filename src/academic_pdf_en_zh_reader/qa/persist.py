@@ -5,7 +5,6 @@
 
 from __future__ import annotations
 
-import importlib.metadata
 import json
 import os
 import platform
@@ -259,6 +258,10 @@ def _provenance(
     code_version: str,
     limits: WorkerLimits,
 ) -> dict[str, object]:
+    # Provenance is committed by the parent. Importing metadata at module load
+    # also initializes email/socket and fails inside the zero-capability worker.
+    import importlib.metadata
+
     if not _CODE_VERSION.fullmatch(code_version):
         raise QaCommitError("QA_CODE_VERSION_INVALID")
     dependency_hash = _bounded_file(

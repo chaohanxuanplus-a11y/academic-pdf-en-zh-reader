@@ -21,6 +21,7 @@ from academic_pdf_en_zh_reader.rendering.page_geometry import (
     A3_LANDSCAPE_WIDTH_MPT,
     A4_WIDTH_MPT,
 )
+from academic_pdf_en_zh_reader.security.runtime_paths import resolve_runtime_path
 from academic_pdf_en_zh_reader.typography.cjk_breaker import break_text
 from academic_pdf_en_zh_reader.typography.font_registry import (
     PROJECT_ROOT,
@@ -129,7 +130,7 @@ def load_brand_manifest(
     """Load and verify the fixed local brand asset without trusting plan paths."""
 
     try:
-        manifest_path = Path(path).resolve(strict=True)
+        manifest_path = resolve_runtime_path(Path(path), strict=True)
         manifest_path.relative_to(_BRAND_DIR)
         raw = manifest_path.read_bytes()
         value = json.loads(raw.decode("utf-8"))
@@ -168,7 +169,7 @@ def load_brand_manifest(
     ):
         raise OverlayPlanError("BRAND_ASSET_INVALID", "brand image identity is invalid")
     try:
-        asset_path = (PROJECT_ROOT / raw_path).resolve(strict=True)
+        asset_path = resolve_runtime_path(PROJECT_ROOT / raw_path, strict=True)
         asset_path.relative_to(_BRAND_DIR)
     except (OSError, ValueError) as exc:
         raise OverlayPlanError(

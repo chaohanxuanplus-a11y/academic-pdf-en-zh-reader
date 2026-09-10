@@ -105,11 +105,47 @@ builds or prove LPAC operation. SQLite 3.53.4 is selected through the upstream
 build property, incorporating later upstream fixes without patching its C code.
 Upstream licenses remain unchanged.
 
-Install `uv` separately, then create the project environment using this base:
+Install `uv` separately. In PowerShell, disable bytecode writes to preserve the
+immutable base manifest, then create the project environment using this base:
 
 ```text
-uv sync --frozen --all-groups --python ".tools/compatible-python/python.exe"
+$env:PYTHONDONTWRITEBYTECODE = "1"
+uv sync --frozen --all-groups --link-mode copy --python ".tools/compatible-python/python.exe"
 ```
+
+Windows also requires `academic-pdf-en-zh-reader-windows-dependencies.zip` from
+that same release. Verify its release checksums and `dependencies-artifact.json`,
+then extract `compatible-dependencies/` into `.tools/`. The archive includes the
+upstream pure-Python fontTools and charset-normalizer wheels and this project's
+Pillow build; it is not a generic replacement Pillow distribution. Do not mix
+wheelhouses from different releases. Keep their build manifest and the original
+license texts inside each wheel.
+
+```text
+.tools/compatible-python/python.exe -B scripts/install_compatible_dependencies.py --wheelhouse .tools/compatible-dependencies --python .venv/Scripts/python.exe
+```
+
+The installer verifies the immutable base, all three wheel hashes, upstream
+pure-wheel identities, and every installed package member. It installs only the
+specified local wheels, offline and without dependency resolution, then records
+`.venv/compatible-dependencies.json`. Subsequent commands deliberately use
+`--no-sync`: automatic synchronization could restore incompatible upstream native
+wheels. After intentionally synchronizing the environment again, repeat the
+verified compatibility installation before processing any paper.
+
+Maintainers can build the wheelhouse instead with a separate TLS-enabled x64
+Python 3.12 bootstrap and the existing C++ toolchain:
+
+```text
+python scripts/build_compatible_dependencies.py --output-dir .tools/compatible-dependencies
+```
+
+The fixed sources and build tools are in `compliance/python-dependencies.json`.
+The build retains project-required PNG/JPEG and FreeType support; optional image
+formats and complex text-shaping engines are outside this build's support scope.
+FreeType includes one pinned upstream bounds fix; the manifest records the
+patch and exact before/after source hashes. See `UPSTREAMS.md` for details.
+No installed or signed DLL is patched, and the build does not relax LPAC.
 
 Normal source/Skill releases include the approved fonts; users do not need a
 font download step. The following are maintainer-only recovery/verification
@@ -137,7 +173,7 @@ directory must also be outside the managed job. Prepare one supported PDF with
 the production preparation front door:
 
 ```text
-uv run --python ".tools/compatible-python/python.exe" --frozen python scripts/prepare_job.py --managed-root ABSOLUTE_PRIVATE_MANAGED_ROOT --job-id SAFE_JOB_ID --source-pdf ABSOLUTE_SOURCE_PDF
+uv run --python ".tools/compatible-python/python.exe" --frozen --no-sync python scripts/prepare_job.py --managed-root ABSOLUTE_PRIVATE_MANAGED_ROOT --job-id SAFE_JOB_ID --source-pdf ABSOLUTE_SOURCE_PDF
 ```
 
 Treat the resulting `units.json` as untrusted data. In the private Agent
@@ -149,7 +185,7 @@ ambiguity keys; do not calculate bindings by hand or place paper text in a
 command. Then finish the same job once:
 
 ```text
-uv run --python ".tools/compatible-python/python.exe" --frozen python scripts/finish_job.py --managed-root ABSOLUTE_PRIVATE_MANAGED_ROOT --job-id SAFE_JOB_ID --source-pdf ABSOLUTE_SOURCE_PDF --translation-json ABSOLUTE_PRIVATE_TRANSLATION_JSON --review-json ABSOLUTE_PRIVATE_REVIEW_JSON --semantic-candidates-json ABSOLUTE_PRIVATE_SEMANTIC_CANDIDATES_JSON --output-pdf ABSOLUTE_FINAL_PDF
+uv run --python ".tools/compatible-python/python.exe" --frozen --no-sync python scripts/finish_job.py --managed-root ABSOLUTE_PRIVATE_MANAGED_ROOT --job-id SAFE_JOB_ID --source-pdf ABSOLUTE_SOURCE_PDF --translation-json ABSOLUTE_PRIVATE_TRANSLATION_JSON --review-json ABSOLUTE_PRIVATE_REVIEW_JSON --semantic-candidates-json ABSOLUTE_PRIVATE_SEMANTIC_CANDIDATES_JSON --output-pdf ABSOLUTE_FINAL_PDF
 ```
 
 Only the validated final PDF is the ordinary user-facing result. Structured
@@ -162,17 +198,18 @@ The following commands reproduce local quality gates with the Windows runtime.
 Use a fresh private `ABSOLUTE_NEW_TEST_TEMP` directory outside the repository:
 
 ```text
-uv run --python ".tools/compatible-python/python.exe" --frozen pytest -q --basetemp ABSOLUTE_NEW_TEST_TEMP
-uv run --python ".tools/compatible-python/python.exe" --frozen ruff check .
-uv run --python ".tools/compatible-python/python.exe" --frozen ruff format --check .
-uv run --python ".tools/compatible-python/python.exe" --frozen python scripts/check_dependency_policy.py
-uv run --python ".tools/compatible-python/python.exe" --frozen python scripts/check_release_readiness.py --mode current
-uv run --python ".tools/compatible-python/python.exe" --frozen python scripts/check_github_actions_policy.py
+uv run --python ".tools/compatible-python/python.exe" --frozen --no-sync pytest -q --basetemp ABSOLUTE_NEW_TEST_TEMP
+uv run --python ".tools/compatible-python/python.exe" --frozen --no-sync ruff check .
+uv run --python ".tools/compatible-python/python.exe" --frozen --no-sync ruff format --check .
+uv run --python ".tools/compatible-python/python.exe" --frozen --no-sync python scripts/check_dependency_policy.py
+uv run --python ".tools/compatible-python/python.exe" --frozen --no-sync python scripts/check_release_readiness.py --mode current
+uv run --python ".tools/compatible-python/python.exe" --frozen --no-sync python scripts/check_github_actions_policy.py
 ```
 
 The `current` mode validates the development or release-ready rules selected by
 the state declared in `compliance/release-status.json`. Passing these checks is
-not permission to publish a release. A runtime archive is admitted only after
+not permission to publish a release. Runtime and dependency archives are admitted
+only after
 the same workflow run and SHA pass the real zero-capability LPAC probe and
 production rendering/QA test using that exact runtime. Neither the builder's
 host smoke test nor the packager's hash/PE checks can substitute for those gates.

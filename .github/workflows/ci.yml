@@ -61,12 +61,18 @@ jobs:
         run: python scripts/build_compatible_python.py --output-dir .tools/compatible-python
       - name: Synchronize the frozen environment
         run: uv sync --frozen --all-groups --python ".tools/compatible-python/python.exe"
+      - name: Build the pinned compatible dependency wheels
+        run: python scripts/build_compatible_dependencies.py --output-dir .tools/compatible-dependencies
+      - name: Install and record the verified dependency overlay
+        run: python scripts/install_compatible_dependencies.py --wheelhouse .tools/compatible-dependencies --python .venv/Scripts/python.exe
+      - name: Verify the installed dependency bytes before testing
+        run: python scripts/install_compatible_dependencies.py --wheelhouse .tools/compatible-dependencies --python .venv/Scripts/python.exe --verify-only
       - name: Smoke test the restricted Windows worker
-        run: uv run --python ".tools/compatible-python/python.exe" --frozen pytest -q tests/security/test_windows_worker_limits.py::test_worker_uses_restricted_token_and_enforced_job_limits
+        run: uv run --python ".tools/compatible-python/python.exe" --frozen --no-sync pytest -q tests/security/test_windows_worker_limits.py::test_worker_uses_restricted_token_and_enforced_job_limits
       - name: Verify the production AppContainer security probe
-        run: uv run --python ".tools/compatible-python/python.exe" --frozen python scripts/probe_worker_sandbox.py
+        run: uv run --python ".tools/compatible-python/python.exe" --frozen --no-sync python scripts/probe_worker_sandbox.py
       - name: Test the Windows worker and production pipeline
-        run: uv run --python ".tools/compatible-python/python.exe" --frozen pytest -q
+        run: uv run --python ".tools/compatible-python/python.exe" --frozen --no-sync pytest -q
 
   reuse:
     runs-on: ubuntu-24.04

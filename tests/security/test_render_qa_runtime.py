@@ -131,7 +131,8 @@ def test_render_runtime_has_a_closed_isolated_import_graph(tmp_path: Path) -> No
         "import typing_extensions,referencing;"
         "import academic_pdf_en_zh_reader.rendering.compose as compose;"
         "import academic_pdf_en_zh_reader.qa.api as qa;"
-        "modules=(typing_extensions,referencing,compose,qa);"
+        "import academic_pdf_en_zh_reader.security.runtime_paths as runtime_paths;"
+        "modules=(typing_extensions,referencing,compose,qa,runtime_paths);"
         "assert all(pathlib.Path(module.__file__).resolve().is_relative_to(root) "
         "for module in modules)"
     )

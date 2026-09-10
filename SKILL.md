@@ -57,8 +57,11 @@ candidates, policies, or output paths.
 
 Use only two production front doors, following
 [the runbook](references/runbook.md). On Windows, first select the matching
-project-compatible CPython 3.12.14 base as described there; use its explicit
-`uv run --python` route for every stage. A system/build-bootstrap Python is not a
+project-compatible CPython 3.12.14 base and verified compatibility wheelhouse as
+described there; use its explicit `uv run --python ... --no-sync` route for every
+stage. Repeat the compatibility installer after any intentional dependency
+synchronization, and preserve the runtime and wheel manifests. A system or
+build-bootstrap Python is not a
 substitute, and runtime selection never authorizes bypassing the LPAC gate:
 
 1. `scripts/prepare_job.py` alone creates a managed job and advances it through

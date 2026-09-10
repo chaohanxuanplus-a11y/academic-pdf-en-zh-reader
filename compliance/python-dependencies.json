@@ -1,0 +1,267 @@
+{
+  "schema_version": 1,
+  "recipe": "scripts/build_compatible_dependencies.py",
+  "scope": "Minimal Windows CPython 3.12 x64 project dependencies; not a complete Pillow replacement.",
+  "sdk_version": "10.0.26100.0",
+  "platform_toolset": "v143",
+  "bit_identical_reproducibility_verified": false,
+  "pillow_configuration": {
+    "zlib": "enable",
+    "jpeg": "enable",
+    "freetype": "enable",
+    "tiff": "disable",
+    "webp": "disable",
+    "jpeg2000": "disable",
+    "lcms": "disable",
+    "raqm": "disable",
+    "imagequant": "disable",
+    "xcb": "disable",
+    "avif": "disable",
+    "platform-guessing": "disable",
+    "parallel": "2"
+  },
+  "native_configuration": {
+    "libjpeg-turbo": {
+      "WITH_SIMD": "OFF",
+      "WITH_TURBOJPEG": "OFF",
+      "WITH_JPEG8": "ON",
+      "ENABLE_SHARED": "OFF",
+      "WITH_CRT_DLL": "ON"
+    },
+    "zlib-ng": {
+      "BUILD_SHARED_LIBS": "OFF",
+      "ZLIB_COMPAT": "ON",
+      "ZLIB_ENABLE_TESTS": "OFF"
+    },
+    "freetype": {
+      "BUILD_SHARED_LIBS": "OFF",
+      "FT_DISABLE_ZLIB": "ON",
+      "FT_DISABLE_BZIP2": "ON",
+      "FT_DISABLE_PNG": "ON",
+      "FT_DISABLE_HARFBUZZ": "ON",
+      "FT_DISABLE_BROTLI": "ON"
+    }
+  },
+  "compiler_flags": [
+    "/guard:cf"
+  ],
+  "pillow_linker_flags": [
+    "/MANIFEST:NO",
+    "/DYNAMICBASE",
+    "/HIGHENTROPYVA",
+    "/NXCOMPAT",
+    "/guard:cf"
+  ],
+  "policy_note": "Documented build choices and license metadata differ from upstream wheels. The only C implementation change is the complete, fixed FreeType upstream TT_Get_Var_Design fix 5a280ecde6f324de0d226261036e736e0cb49a71 applied to 2.14.3; both source file hashes are checked. No project exploitability has been established. No installed/signed DLL is patched. Static image/font libraries are rebuilt from fixed official sources. CPython ABI is cp312; the production venv must use the separately validated compatible base. FreeType uses its bundled zlib when the external zlib dependency is disabled. Ordinary TTF/CJK fonts, PNG/JPEG and image primitives are required; optional formats, complex Raqm shaping, color-font PNG and Brotli fonts are not supplied. SIMD is disabled only for libjpeg-turbo (performance tradeoff). No Build Tools, SDK, or build-tool wheels are redistributed. Local build/host checks do not attest the full production LPAC path.",
+  "source_changes": [
+    {
+      "source": "freetype",
+      "path": "src/truetype/ttgxvar.c",
+      "patch_source": "freetype-security-fix",
+      "before_sha256": "b5ca576f480437e59f84a31ba2b569c7aadd31871f608034f6ea576340b88e10",
+      "after_sha256": "061c22a4a388fd6a135f0099e4c9e8f86286ff3a82b91fcbfe6ae4049f18af06",
+      "reason": "Apply both hunks of the single official TT_Get_Var_Design: Zero extras fix for upstream issue 1436, associated with CVE-2026-50811; no other master changes are included."
+    }
+  ],
+  "sources": [
+    {
+      "name": "pillow",
+      "version": "12.3.0",
+      "kind": "source",
+      "filename": "pillow-12.3.0.tar.gz",
+      "url": "https://files.pythonhosted.org/packages/1c/3d/bb7fca845737cf9d7dbde16ed1843984665ff2e0a518f5db43e77ec540b9/pillow-12.3.0.tar.gz",
+      "sha256": "3b8182a766685eaa002637e28b4ec8d6b18819a0c71f579bf0dbaa5830297cce",
+      "size": 47025035,
+      "archive_root": "pillow-12.3.0",
+      "license": "MIT-CMU"
+    },
+    {
+      "name": "libjpeg-turbo",
+      "version": "3.1.4.1",
+      "kind": "source",
+      "filename": "libjpeg-turbo-3.1.4.1.tar.gz",
+      "url": "https://codeload.github.com/libjpeg-turbo/libjpeg-turbo/tar.gz/9217719d3a58633923b096af4c1d50d304768a64",
+      "sha256": "7cf1ad7af15e3c4bf0694334f9682d862f81d8cacb93f8daf37fd9e5adbe5984",
+      "size": 2529468,
+      "archive_root": "libjpeg-turbo-9217719d3a58633923b096af4c1d50d304768a64",
+      "commit": "9217719d3a58633923b096af4c1d50d304768a64",
+      "license": "IJG AND BSD-3-Clause",
+      "license_scope": "libjpeg API uses IJG; upstream complete license roll-up is retained; SIMD and TurboJPEG API are disabled."
+    },
+    {
+      "name": "zlib-ng",
+      "version": "2.3.3",
+      "kind": "source",
+      "filename": "zlib-ng-2.3.3.tar.gz",
+      "url": "https://codeload.github.com/zlib-ng/zlib-ng/tar.gz/12731092979c6d07f42da27da673a9f6c7b13586",
+      "sha256": "a0d2a5d122c84b56a793a1553a9c3327fb2eb7469bf7a86b79e3c7be5d92e8d6",
+      "size": 2450038,
+      "archive_root": "zlib-ng-12731092979c6d07f42da27da673a9f6c7b13586",
+      "commit": "12731092979c6d07f42da27da673a9f6c7b13586",
+      "license": "Zlib"
+    },
+    {
+      "name": "freetype",
+      "version": "2.14.3",
+      "kind": "source",
+      "filename": "freetype-2.14.3.tar.gz",
+      "url": "https://download-mirror.savannah.gnu.org/releases/freetype/freetype-2.14.3.tar.gz",
+      "sha256": "e61b31ab26358b946e767ed7eb7f4bb2e507da1cfefeb7a8861ace7fd5c899a1",
+      "size": 4134916,
+      "archive_root": "freetype-2.14.3",
+      "upstream_tag": "VER-2-14-3",
+      "upstream_commit": "0a0221a1347e2f1e07c395263540026e9a0aa7c7",
+      "license": "FTL",
+      "license_scope": "Choose FTL, not GPL; preserve required FreeType Team attribution and upstream bundled-code notices."
+    },
+    {
+      "name": "freetype-security-fix",
+      "version": "5a280ecde6f324de0d226261036e736e0cb49a71",
+      "kind": "source-patch",
+      "filename": "freetype-5a280ecde6f324de0d226261036e736e0cb49a71.patch",
+      "url": "https://github.com/freetype/freetype/commit/5a280ecde6f324de0d226261036e736e0cb49a71.patch",
+      "sha256": "fae1c96cd94b9ed5aafc7424f4b8894f2e235b4869a72b3cdbb684dedcea9d1a",
+      "size": 1705,
+      "commit": "5a280ecde6f324de0d226261036e736e0cb49a71",
+      "license": "FTL"
+    },
+    {
+      "name": "pythoncapi-compat-license",
+      "version": "c84545f0e1e21757d4901f75c47333d25a3fcff0",
+      "kind": "license",
+      "filename": "pythoncapi-COPYING",
+      "url": "https://raw.githubusercontent.com/python/pythoncapi-compat/c84545f0e1e21757d4901f75c47333d25a3fcff0/COPYING",
+      "sha256": "3f2c1ffa76383a55ae0aac01c9737cd70050dff63e1f026694fbe9d662573c98",
+      "size": 690,
+      "license": "0BSD"
+    },
+    {
+      "name": "setuptools",
+      "version": "82.0.1",
+      "kind": "build-tool-wheel",
+      "filename": "setuptools-82.0.1-py3-none-any.whl",
+      "url": "https://files.pythonhosted.org/packages/9d/76/f789f7a86709c6b087c5a2f52f911838cad707cc613162401badc665acfe/setuptools-82.0.1-py3-none-any.whl",
+      "sha256": "a59e362652f08dcd477c78bb6e7bd9d80a7995bc73ce773050228a348ce2e5bb",
+      "size": 1006223,
+      "license": "MIT",
+      "redistributed": false
+    },
+    {
+      "name": "pybind11",
+      "version": "3.0.2",
+      "kind": "build-tool-wheel",
+      "filename": "pybind11-3.0.2-py3-none-any.whl",
+      "url": "https://files.pythonhosted.org/packages/88/c5/e98d9c51f3d5300d5e40ad9037dd6b3b60736fd02ab68dcc98c96be7592d/pybind11-3.0.2-py3-none-any.whl",
+      "sha256": "f8a6500548919cc33bcd220d5f984688326f574fa97f1107f2f4fdb4c6fb019f",
+      "size": 310158,
+      "license": "BSD-3-Clause",
+      "redistributed": false
+    },
+    {
+      "name": "cmake",
+      "version": "3.31.6",
+      "kind": "build-tool-wheel",
+      "filename": "cmake-3.31.6-py3-none-win_amd64.whl",
+      "url": "https://files.pythonhosted.org/packages/18/58/909d6d99acb4e0886d0f660cf4e0fb26f586590e370b2e4ce7a10d06b145/cmake-3.31.6-py3-none-win_amd64.whl",
+      "sha256": "bbaed969cef3c427f4f17591feb28db4ae595e3a4bbd45cb35522cee14df6a32",
+      "size": 36396448,
+      "license": "BSD-3-Clause",
+      "redistributed": false
+    },
+    {
+      "name": "fonttools",
+      "version": "4.63.0",
+      "kind": "official-wheel",
+      "filename": "fonttools-4.63.0-py3-none-any.whl",
+      "url": "https://files.pythonhosted.org/packages/2c/47/c99d5268f354002ce80f8d029cd9d7d872969da1de8b93d32de4dc56d6f4/fonttools-4.63.0-py3-none-any.whl",
+      "sha256": "445af2eab030a16b9171ea8bdda7ebf7d96bda2df88ee182a464252f6e05e20d",
+      "size": 1164562,
+      "license": "MIT",
+      "license_scope": "The original wheel also contains LICENSE.external; preserve it unchanged."
+    },
+    {
+      "name": "charset-normalizer",
+      "version": "3.5.1",
+      "kind": "official-wheel",
+      "filename": "charset_normalizer-3.5.1-py3-none-any.whl",
+      "url": "https://files.pythonhosted.org/packages/cc/61/d01fc49b8dea277640b55a9e15960dbca9fdc8c9fde18e572d39c59f4019/charset_normalizer-3.5.1-py3-none-any.whl",
+      "sha256": "6df0ec430f9a831772c23ca5a224cba36517a58a84bb32c32bb59a9fa67c47f6",
+      "size": 68658,
+      "license": "MIT"
+    }
+  ],
+  "license_inputs": [
+    {
+      "source": "pillow",
+      "path": "src/Tk/_tkmini.h",
+      "leading_comments": true
+    },
+    {
+      "source": "libjpeg-turbo",
+      "path": "LICENSE.md"
+    },
+    {
+      "source": "libjpeg-turbo",
+      "path": "README.ijg"
+    },
+    {
+      "source": "zlib-ng",
+      "path": "LICENSE.md"
+    },
+    {
+      "source": "freetype",
+      "path": "LICENSE.TXT"
+    },
+    {
+      "source": "freetype",
+      "path": "docs/FTL.TXT"
+    },
+    {
+      "source": "freetype",
+      "path": "src/bdf/README"
+    },
+    {
+      "source": "freetype",
+      "path": "src/pcf/README"
+    },
+    {
+      "source": "freetype",
+      "path": "src/gzip/zlib.h",
+      "leading_comments": true
+    },
+    {
+      "source": "freetype",
+      "path": "src/base/fthash.c",
+      "leading_comments": true
+    },
+    {
+      "source": "freetype",
+      "path": "include/freetype/internal/fthash.h",
+      "leading_comments": true
+    },
+    {
+      "source": "freetype",
+      "path": "src/autofit/ft-hb-ft.c",
+      "leading_comments": true
+    },
+    {
+      "source": "freetype",
+      "path": "src/autofit/ft-hb-decls.h",
+      "leading_comments": true
+    },
+    {
+      "source": "freetype",
+      "path": "src/autofit/ft-hb-types.h",
+      "leading_comments": true
+    },
+    {
+      "source": "freetype",
+      "path": "src/autofit/hb-script-list.h",
+      "leading_comments": true
+    },
+    {
+      "source": "pythoncapi-compat-license",
+      "path": "pythoncapi-COPYING"
+    }
+  ]
+}

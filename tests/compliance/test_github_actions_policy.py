@@ -71,7 +71,8 @@ class GitHubActionsPolicyTests(unittest.TestCase):
             windows,
         )
         self.assertIn(
-            'uv run --python ".tools/compatible-python/python.exe" --frozen pytest -q',
+            'uv run --python ".tools/compatible-python/python.exe" '
+            "--frozen --no-sync pytest -q",
             windows,
         )
         self.assertIn(
@@ -132,6 +133,189 @@ class GitHubActionsPolicyTests(unittest.TestCase):
             original.replace("runtime.spdx.json", "unrelated.spdx.json"),
         ):
             with self.subTest(mutation=mutated):
+                self.assertTrue(
+                    validate_workflow_text(
+                        ".github/workflows/release.yml", mutated, self.inventory
+                    )
+                )
+
+    def test_windows_dependency_overlay_precedes_every_test_without_resync(
+        self,
+    ) -> None:
+        build = (
+            "python scripts/build_compatible_dependencies.py "
+            "--output-dir .tools/compatible-dependencies"
+        )
+        install = (
+            "python scripts/install_compatible_dependencies.py "
+            "--wheelhouse .tools/compatible-dependencies "
+            "--python .venv/Scripts/python.exe"
+        )
+        verify = install + " --verify-only"
+        for filename, job_name in (
+            ("ci.yml", "windows-runtime"),
+            ("release.yml", "windows-2025-production-gate"),
+        ):
+            with self.subTest(filename=filename):
+                workflow = (ROOT / ".github/workflows" / filename).read_text(
+                    encoding="utf-8"
+                )
+                windows = workflow.split(f"  {job_name}:\n", 1)[1].split(
+                    "\n  reuse:\n", 1
+                )[0]
+                for command in (build, install, verify):
+                    self.assertIn("        run: " + command + "\n", windows)
+                self.assertLess(windows.index("uv sync"), windows.index(build))
+                self.assertLess(windows.index(build), windows.index(install))
+                self.assertLess(windows.index(install), windows.index(verify))
+                self.assertLess(windows.index(verify), windows.index("uv run"))
+                for command in re.findall(r"(?m)^\s+run: (uv run .+)$", windows):
+                    self.assertTrue(
+                        command.startswith(
+                            'uv run --python ".tools/compatible-python/python.exe" '
+                            "--frozen --no-sync "
+                        ),
+                        command,
+                    )
+
+    def test_dependency_overlay_cannot_be_missing_reordered_or_resynchronized(
+        self,
+    ) -> None:
+        build = (
+            "python scripts/build_compatible_dependencies.py "
+            "--output-dir .tools/compatible-dependencies"
+        )
+        install = (
+            "python scripts/install_compatible_dependencies.py "
+            "--wheelhouse .tools/compatible-dependencies "
+            "--python .venv/Scripts/python.exe"
+        )
+        verify = install + " --verify-only"
+        for filename in ("ci.yml", "release.yml"):
+            original = (ROOT / ".github/workflows" / filename).read_text(
+                encoding="utf-8"
+            )
+            mutations = (
+                original.replace(build, "python skipped.py"),
+                original.replace("run: " + install + "\n", "run: python skipped.py\n"),
+                original.replace(verify, "python skipped.py"),
+                original.replace(
+                    "--wheelhouse .tools/compatible-dependencies",
+                    "--wheelhouse unverified",
+                ),
+                original.replace(
+                    "--python .venv/Scripts/python.exe", "--python other/python.exe"
+                ),
+                original.replace("--frozen --no-sync", "--frozen"),
+                original.replace("run: " + build, "run: REORDER_PLACEHOLDER", 1)
+                .replace("run: " + verify + "\n", "run: " + build + "\n", 1)
+                .replace("run: REORDER_PLACEHOLDER", "run: " + verify, 1),
+                original.replace(
+                    "      - name: Verify the production AppContainer security probe\n",
+                    "      - name: Unexpected synchronization\n"
+                    "        run: uv sync --frozen\n"
+                    "      - name: Verify the production AppContainer security probe\n",
+                ),
+                original.replace(
+                    "        run: " + install + "\n",
+                    "        if: ${{ false }}\n        run: " + install + "\n",
+                ),
+                original.replace(
+                    "        run: " + verify + "\n",
+                    "        continue-on-error: true\n        run: " + verify + "\n",
+                ),
+            )
+            for mutated in mutations:
+                with self.subTest(filename=filename, mutation=mutated):
+                    self.assertNotEqual(original, mutated)
+                    self.assertTrue(
+                        validate_workflow_text(
+                            f".github/workflows/{filename}", mutated, self.inventory
+                        )
+                    )
+
+    def test_release_packages_and_transfers_the_tested_dependency_overlay(self) -> None:
+        release = (ROOT / ".github/workflows/release.yml").read_text(encoding="utf-8")
+        build, windows = release.split("  windows-2025-production-gate:\n", 1)
+        package = (
+            "python scripts/package_compatible_dependencies.py "
+            "--wheelhouse .tools/compatible-dependencies "
+            "--python .venv/Scripts/python.exe --output-dir dist/windows-dependencies"
+        )
+        self.assertIn(package, windows)
+        self.assertLess(windows.index("id: lpac-finish"), windows.index(package))
+        self.assertLess(
+            windows.index(package), windows.index("name: tested-windows-dependencies")
+        )
+        self.assertIn(
+            "name: tested-windows-dependencies\n"
+            "          path: dist/windows-dependencies/\n"
+            "          if-no-files-found: error",
+            windows,
+        )
+        self.assertIn(
+            "name: tested-windows-dependencies\n"
+            "          path: dist/release/\n"
+            "          digest-mismatch: error",
+            build,
+        )
+        checksum = next(line for line in build.splitlines() if "sha256sum " in line)
+        for asset in (
+            "academic-pdf-en-zh-reader-windows-dependencies.zip",
+            "dependencies-artifact.json",
+            "dependencies.spdx.json",
+        ):
+            self.assertIn(asset, checksum)
+        self.assertIn("output-file: dist/release/dependencies.spdx.json", build)
+
+    def test_dependency_release_transfer_is_same_run_and_fail_closed(self) -> None:
+        original = (ROOT / ".github/workflows/release.yml").read_text(encoding="utf-8")
+        package = (
+            "python scripts/package_compatible_dependencies.py "
+            "--wheelhouse .tools/compatible-dependencies "
+            "--python .venv/Scripts/python.exe --output-dir dist/windows-dependencies"
+        )
+        finish = (
+            'uv run --python ".tools/compatible-python/python.exe" '
+            "--frozen --no-sync pytest -q "
+            "tests/security/test_finish_worker_boundary.py::"
+            "test_production_finish_completes_render_and_qa_in_lpac"
+        )
+        mutations = (
+            original.replace(
+                "python scripts/package_compatible_dependencies.py", "python skipped.py"
+            ),
+            original.replace(
+                "name: tested-windows-dependencies", "name: untested-dependencies", 1
+            ),
+            original.replace(
+                "path: dist/windows-dependencies/",
+                "path: .tools/compatible-dependencies/",
+            ),
+            original.replace("digest-mismatch: error", "digest-mismatch: warn"),
+            original.replace(
+                "name: tested-windows-dependencies\n          path: dist/release/",
+                "name: tested-windows-dependencies\n"
+                "          run-id: 123\n          path: dist/release/",
+            ),
+            original.replace(package, "REORDER_PLACEHOLDER")
+            .replace(finish, package)
+            .replace("REORDER_PLACEHOLDER", finish),
+            original.replace(
+                "runtime-artifact.json "
+                "academic-pdf-en-zh-reader-windows-dependencies.zip ",
+                "runtime-artifact.json ",
+            ),
+            original.replace("dependencies-artifact.json ", ""),
+            original.replace("dependencies.spdx.json >", ">"),
+            original.replace(
+                "output-file: dist/release/dependencies.spdx.json",
+                "output-file: dist/release/unrelated.spdx.json",
+            ),
+        )
+        for mutated in mutations:
+            with self.subTest(mutation=mutated):
+                self.assertNotEqual(original, mutated)
                 self.assertTrue(
                     validate_workflow_text(
                         ".github/workflows/release.yml", mutated, self.inventory
@@ -233,7 +417,7 @@ class GitHubActionsPolicyTests(unittest.TestCase):
         )
         self.assertIn("spdx-json", release)
         self.assertIn("pypa/gh-action-pip-audit", release)
-        self.assertEqual(3, len(re.findall(r"(?m)^\s+file: dist/release/", release)))
+        self.assertEqual(4, len(re.findall(r"(?m)^\s+file: dist/release/", release)))
         self.assertNotIn("path: dist/release/academic-pdf", release)
         self.assertIn("SHA256SUMS", release)
         self.assertIn("asset-manifest.json", release)
@@ -296,12 +480,13 @@ class GitHubActionsPolicyTests(unittest.TestCase):
             windows,
         )
         self.assertIn(
-            'uv run --python ".tools/compatible-python/python.exe" --frozen '
+            'uv run --python ".tools/compatible-python/python.exe" --frozen --no-sync '
             "python scripts/probe_worker_sandbox.py",
             windows,
         )
         self.assertIn(
-            'uv run --python ".tools/compatible-python/python.exe" --frozen pytest -q '
+            'uv run --python ".tools/compatible-python/python.exe" '
+            "--frozen --no-sync pytest -q "
             "tests/security/test_finish_worker_boundary.py::"
             "test_production_finish_completes_render_and_qa_in_lpac",
             windows,

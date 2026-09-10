@@ -48,6 +48,39 @@ source change, and all runtime file hashes. Fixed inputs and stable ZIP metadata
 do not establish bit-identical compiler builds. The manifest's host checks are
 not a substitute for same-run, same-SHA LPAC and production-finish release gates.
 
+## Windows compatibility dependency sources
+
+The separate dependency recipe is `scripts/build_compatible_dependencies.py`;
+`compliance/python-dependencies.json` records exact URLs, versions, commits,
+archive hashes, build-tool wheels, feature choices and license inputs. Runtime
+and build-tool archives are not vendored in the source/Skill ZIPs.
+
+- fontTools 4.63.0 and charset-normalizer 3.5.1: original PyPI pure-Python wheel
+  bytes already admitted in `uv.lock`; no source or binary changes.
+- Pillow 12.3.0: the official hashed source distribution, built for CPython 3.12
+  x64 with documented optional-feature switches. DLL manifest generation is
+  omitted through the linker option; compiler mitigations are retained. Notice
+  metadata is extended to include linked-library notices; C implementations and
+  installed or signed DLLs are not patched.
+- libjpeg-turbo 3.1.4.1 and zlib-ng 2.3.3: fixed official repository source
+  snapshots, statically built without C patches. These snapshots are not
+  presented as upstream-supported release tarballs.
+- FreeType 2.14.3: fixed source with only the official `TT_Get_Var_Design`
+  bounds fix from commit `5a280ecde6f324de0d226261036e736e0cb49a71`.
+  Patch and before/after source hashes are recorded; no other master changes
+  are imported. The FTL option and bundled-component notices apply.
+- Tcl/Tk: preserve the original leading license text in Pillow's
+  `src/Tk/_tkmini.h`; no Tcl/Tk runtime is supplied.
+- pythoncapi-compat: retain the license at the exact commit accompanying the
+  header present in Pillow's source, as recorded in the input inventory.
+- setuptools 82.0.1, pybind11 3.0.2 and CMake 3.31.6: fixed build-environment
+  wheels only, not release assets.
+
+See [third-party notices](THIRD_PARTY_NOTICES.md) for attribution and support
+scope. The resulting wheel bytes are bound by a separate manifest, verified
+installation receipt and actual production gate; the upstream lock alone is
+not evidence for a locally compiled Pillow wheel.
+
 ## Documentation upstream
 
 ### Contributor Covenant 3.0

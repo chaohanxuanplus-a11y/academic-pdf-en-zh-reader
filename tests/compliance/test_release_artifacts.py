@@ -939,6 +939,15 @@ def test_ready_tree_builds_repeatable_notice_complete_candidates(
             assert "academic-pdf-en-zh-reader/REUSE.toml" in names
             assert "academic-pdf-en-zh-reader/compliance/python-runtime.json" in names
             assert (
+                "academic-pdf-en-zh-reader/compliance/python-dependencies.json" in names
+            )
+            for script in (
+                "build_compatible_dependencies.py",
+                "install_compatible_dependencies.py",
+                "package_compatible_dependencies.py",
+            ):
+                assert f"academic-pdf-en-zh-reader/scripts/{script}" in names
+            assert (
                 "academic-pdf-en-zh-reader/scripts/build_compatible_python.py" in names
             )
             assert (

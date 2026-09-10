@@ -30,11 +30,20 @@ output path.
 Before preparing a paper, follow [the repository setup](../README.md#local-setup)
 to obtain the separate project-compatible CPython 3.12.14 runtime from the same
 release, or build it with `scripts/build_compatible_python.py`. Preserve its
-manifest and license files and synchronize with:
+manifest and license files. In PowerShell synchronize, then install the matching
+release's verified compatibility wheelhouse as described in the README:
 
 ```text
-uv sync --frozen --all-groups --python ".tools/compatible-python/python.exe"
+$env:PYTHONDONTWRITEBYTECODE = "1"
+uv sync --frozen --all-groups --link-mode copy --python ".tools/compatible-python/python.exe"
+.tools/compatible-python/python.exe -B scripts/install_compatible_dependencies.py --wheelhouse .tools/compatible-dependencies --python .venv/Scripts/python.exe
 ```
+
+The compatibility installer verifies and records all three selected wheels and
+their installed bytes. Do not use the upstream lock alone as evidence for a
+locally built Pillow wheel. Keep `--no-sync` on every following `uv run` so that
+automatic synchronization cannot restore incompatible native wheels. If you
+resynchronize intentionally, repeat the verified installation before processing.
 
 All front doors and artifact helpers below explicitly use that interpreter.
 The existing stock Python used to build it, including the official 3.12.10 CI
@@ -58,7 +67,7 @@ test in the same workflow run and SHA; current release blockers remain binding.
 Use the only production preparation front door:
 
 ```text
-uv run --python ".tools/compatible-python/python.exe" --frozen python scripts/prepare_job.py --managed-root ABSOLUTE_PRIVATE_MANAGED_ROOT --job-id SAFE_JOB_ID --source-pdf ABSOLUTE_SOURCE_PDF
+uv run --python ".tools/compatible-python/python.exe" --frozen --no-sync python scripts/prepare_job.py --managed-root ABSOLUTE_PRIVATE_MANAGED_ROOT --job-id SAFE_JOB_ID --source-pdf ABSOLUTE_SOURCE_PDF
 ```
 
 It creates the managed child, performs preflight, deterministic A4 page
@@ -111,7 +120,7 @@ the successful prepare receipt. Every managed unit ID must occur exactly once.
 Validate the complete private translation and obtain its canonical hash:
 
 ```text
-uv run --python ".tools/compatible-python/python.exe" --frozen python scripts/agent_artifacts.py canonical-hash --schema translation --input ABSOLUTE_PRIVATE_TRANSLATION_JSON
+uv run --python ".tools/compatible-python/python.exe" --frozen --no-sync python scripts/agent_artifacts.py canonical-hash --schema translation --input ABSOLUTE_PRIVATE_TRANSLATION_JSON
 ```
 
 The command accepts only a project-external absolute input path and prints only
@@ -152,7 +161,7 @@ five evidence fields to a private JSON file:
 Then build its stable key at a new private absolute output path:
 
 ```text
-uv run --python ".tools/compatible-python/python.exe" --frozen python scripts/agent_artifacts.py ambiguity-key --input ABSOLUTE_PRIVATE_AMBIGUITY_EVIDENCE_JSON --output ABSOLUTE_PRIVATE_AMBIGUITY_KEY_JSON
+uv run --python ".tools/compatible-python/python.exe" --frozen --no-sync python scripts/agent_artifacts.py ambiguity-key --input ABSOLUTE_PRIVATE_AMBIGUITY_EVIDENCE_JSON --output ABSOLUTE_PRIVATE_AMBIGUITY_KEY_JSON
 ```
 
 Read the generated key JSON as data and insert the whole object into the matching
@@ -161,7 +170,7 @@ edited. The helper never overwrites an existing output. Once every key is bound
 and the review is final, validate and hash it:
 
 ```text
-uv run --python ".tools/compatible-python/python.exe" --frozen python scripts/agent_artifacts.py canonical-hash --schema review --input ABSOLUTE_PRIVATE_REVIEW_JSON
+uv run --python ".tools/compatible-python/python.exe" --frozen --no-sync python scripts/agent_artifacts.py canonical-hash --schema review --input ABSOLUTE_PRIVATE_REVIEW_JSON
 ```
 
 ```json
@@ -186,7 +195,7 @@ finishing front door revalidates it; optionally run this earlier schema-shape
 check:
 
 ```text
-uv run --python ".tools/compatible-python/python.exe" --frozen python scripts/agent_artifacts.py canonical-hash --schema semantic-candidates --input ABSOLUTE_PRIVATE_SEMANTIC_CANDIDATES_JSON
+uv run --python ".tools/compatible-python/python.exe" --frozen --no-sync python scripts/agent_artifacts.py canonical-hash --schema semantic-candidates --input ABSOLUTE_PRIVATE_SEMANTIC_CANDIDATES_JSON
 ```
 
 Never calculate a parent hash or `ambiguity_key.id` by hand, ask a model to
@@ -200,7 +209,7 @@ After the complete artifacts and required derived fields are bound, use the
 single production finishing front door:
 
 ```text
-uv run --python ".tools/compatible-python/python.exe" --frozen python scripts/finish_job.py --managed-root ABSOLUTE_PRIVATE_MANAGED_ROOT --job-id SAFE_JOB_ID --source-pdf ABSOLUTE_SOURCE_PDF --translation-json ABSOLUTE_PRIVATE_TRANSLATION_JSON --review-json ABSOLUTE_PRIVATE_REVIEW_JSON --semantic-candidates-json ABSOLUTE_PRIVATE_SEMANTIC_CANDIDATES_JSON --output-pdf ABSOLUTE_FINAL_PDF
+uv run --python ".tools/compatible-python/python.exe" --frozen --no-sync python scripts/finish_job.py --managed-root ABSOLUTE_PRIVATE_MANAGED_ROOT --job-id SAFE_JOB_ID --source-pdf ABSOLUTE_SOURCE_PDF --translation-json ABSOLUTE_PRIVATE_TRANSLATION_JSON --review-json ABSOLUTE_PRIVATE_REVIEW_JSON --semantic-candidates-json ABSOLUTE_PRIVATE_SEMANTIC_CANDIDATES_JSON --output-pdf ABSOLUTE_FINAL_PDF
 ```
 
 This front door owns all remaining validation, annotation, layout, rendering,

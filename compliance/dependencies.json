@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "reviewed_on": "2026-08-27",
-  "policy_note": "Only the exact registry closure in uv.lock is admitted. Binary wheels require platform-specific SBOM and notices before redistribution.",
+  "policy_note": "The upstream registry versions and artifacts are pinned by uv.lock. Windows additionally requires the separately verified three-wheel compatibility overlay described in compliance/python-dependencies.json; its actual bytes and installed closure are bound by build/install manifests and same-run production gates, not by pretending the upstream lock hashes a local Pillow build. Binary redistribution requires the platform-specific SBOM and original notices.",
   "dependencies": [
     {
       "name": "attrs",
@@ -35,7 +35,8 @@
       "license_source": "https://github.com/jawah/charset_normalizer/blob/master/LICENSE",
       "integrity_source": "uv.lock",
       "reviewed_on": "2026-08-27",
-      "contains_native_code": false
+      "contains_native_code": true,
+      "release_handling": "Upstream offers native and pure wheels. The Windows overlay selects the unmodified py3-none-any wheel already hashed in uv.lock, with its original MIT notice."
     },
     {
       "name": "colorama",
@@ -69,7 +70,8 @@
       "license_source": "https://github.com/fonttools/fonttools/blob/main/LICENSE",
       "integrity_source": "uv.lock",
       "reviewed_on": "2026-08-27",
-      "contains_native_code": false
+      "contains_native_code": true,
+      "release_handling": "Upstream offers native and pure wheels. The Windows overlay selects the unmodified py3-none-any wheel already hashed in uv.lock, preserving LICENSE, LICENSE.external, and the relocated ttx manual."
     },
     {
       "name": "iniconfig",
@@ -147,7 +149,7 @@
       "integrity_source": "uv.lock",
       "reviewed_on": "2026-08-27",
       "contains_native_code": true,
-      "release_handling": "Do not redistribute wheels in v1; audit linked codec libraries before any offline bundle."
+      "release_handling": "The separate Windows overlay includes only the project-built wheel from compliance/python-dependencies.json, with original Pillow and statically linked codec/font notices. It requires exact archive/installed-byte verification and same-run LPAC/production gates; build-tool wheels are not redistributed."
     },
     {
       "name": "pluggy",

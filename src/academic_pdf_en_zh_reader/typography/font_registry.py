@@ -15,6 +15,8 @@ from fontTools.ttLib import TTFont as FontToolsTTFont
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont as ReportLabTTFont
 
+from academic_pdf_en_zh_reader.security.runtime_paths import resolve_runtime_path
+
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 APPROVED_FONT_DIR = (PROJECT_ROOT / "assets" / "fonts").resolve()
 DEFAULT_FONT_MANIFEST = PROJECT_ROOT / "assets" / "font-manifest.json"
@@ -116,7 +118,7 @@ def _font_path(record: dict[str, Any]) -> Path:
             "font path must be a canonical relative assets/fonts path"
         )
     try:
-        path = (PROJECT_ROOT / raw_path).resolve(strict=True)
+        path = resolve_runtime_path(PROJECT_ROOT / raw_path, strict=True)
         path.relative_to(APPROVED_FONT_DIR)
     except (OSError, ValueError) as exc:
         raise FontRegistryError(
