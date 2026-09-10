@@ -223,6 +223,95 @@ def test_compiler_override_is_rejected_before_tool_discovery(monkeypatch) -> Non
         recipe._toolchain()
 
 
+def _mock_installed_toolchains(tmp_path, monkeypatch, installations):
+    for name in ("CL", "_CL_", "LINK", "_LINK_"):
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setenv("PROGRAMFILES(X86)", str(tmp_path))
+    instances = []
+    for major, versions in installations:
+        installation = tmp_path / f"VS{major}"
+        instances.append(
+            {
+                "installationPath": str(installation),
+                "installationVersion": f"{major}.9.12345.1",
+            }
+        )
+        files = ["MSBuild/Current/Bin/MSBuild.exe"] + [
+            f"VC/Tools/MSVC/{version}/bin/Hostx64/x64/cl.exe" for version in versions
+        ]
+        for name in files:
+            path = installation / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(name.encode())
+        default = (
+            installation / "VC/Auxiliary/Build/Microsoft.VCToolsVersion.default.txt"
+        )
+        default.parent.mkdir(parents=True)
+        default.write_text(versions[-1], encoding="utf-8")
+    for name in ("rc.exe", "mt.exe"):
+        path = tmp_path / "Windows Kits/10/bin" / recipe.SDK_VERSION / "x64" / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(name.encode())
+    calls = []
+
+    def fake_run(arguments, **kwargs):
+        calls.append(arguments)
+        if "-version" in arguments and "-format" in arguments:
+            upper = 18 if "[17.0,18.0)" in arguments else 19
+            return json.dumps(
+                [
+                    item
+                    for item in instances
+                    if int(item["installationVersion"].split(".")[0]) < upper
+                ]
+            )
+        return "17.14.1"
+
+    monkeypatch.setattr(recipe, "_run", fake_run)
+    return calls
+
+
+@pytest.mark.parametrize("major", [17, 18])
+def test_toolchain_selects_1444_not_newer_default(tmp_path, monkeypatch, major):
+    calls = _mock_installed_toolchains(
+        tmp_path,
+        monkeypatch,
+        [(major, ["14.44.35207", "14.44.35211", "14.50.12345"])],
+    )
+    _, _, identity = recipe._toolchain()
+    assert identity["vctools_version"] == "14.44.35211"
+    assert identity["platform_toolset"] == "v143"
+    assert identity["sdk_version"] == recipe.SDK_VERSION
+    assert "[17.0,19.0)" in calls[0]
+    expected = tmp_path / f"VS{major}/VC/Tools/MSVC/14.44.35211/bin/Hostx64/x64/cl.exe"
+    assert identity["compiler_sha256"] == recipe._sha256(expected)
+
+
+@pytest.mark.parametrize("version", ["14.43.12345", "14.50.12345"])
+def test_toolchain_refuses_default_without_1444(tmp_path, monkeypatch, version):
+    _mock_installed_toolchains(tmp_path, monkeypatch, [(17, [version])])
+    with pytest.raises(RuntimeError, match="14.44"):
+        recipe._toolchain()
+
+
+def test_toolchain_finds_older_installation_with_exact_family(tmp_path, monkeypatch):
+    _mock_installed_toolchains(
+        tmp_path,
+        monkeypatch,
+        [(18, ["14.50.12345"]), (17, ["14.44.35207"])],
+    )
+    msbuild, _, identity = recipe._toolchain()
+    assert "VS17" in str(msbuild)
+    assert identity["vctools_version"] == "14.44.35207"
+
+
+def test_toolchain_still_requires_exact_sdk_tools(tmp_path, monkeypatch):
+    _mock_installed_toolchains(tmp_path, monkeypatch, [(17, ["14.44.35207"])])
+    (tmp_path / "Windows Kits/10/bin" / recipe.SDK_VERSION / "x64/mt.exe").unlink()
+    with pytest.raises(FileNotFoundError, match="build tool"):
+        recipe._toolchain()
+
+
 def test_archive_count_limit(tmp_path: Path, monkeypatch) -> None:
     archive = tmp_path / "source.zip"
     with zipfile.ZipFile(archive, "w") as handle:

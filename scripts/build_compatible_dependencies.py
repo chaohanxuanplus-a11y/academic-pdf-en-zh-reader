@@ -344,7 +344,13 @@ def _build_environment(msbuild: Path, identity: dict, work: Path) -> dict:
     }
     installation = msbuild.parents[3]
     vcvars = installation / "VC/Auxiliary/Build/vcvarsall.bat"
-    command = f'cmd.exe /d /s /c ""{vcvars}" x64 {shared.SDK_VERSION} && set"'
+    version = identity["vctools_version"]
+    if not re.fullmatch(r"14\.44\.\d+", version):
+        raise ValueError("the exact MSVC 14.44 compiler version is required")
+    command = (
+        f'cmd.exe /d /s /c ""{vcvars}" x64 {shared.SDK_VERSION} '
+        f'-vcvars_ver={version} && set"'
+    )
     result = subprocess.run(
         command,
         env=env,
@@ -363,12 +369,15 @@ def _build_environment(msbuild: Path, identity: dict, work: Path) -> dict:
                 "LIB",
                 "LIBPATH",
                 "VCTOOLSINSTALLDIR",
+                "VCTOOLSVERSION",
                 "WINDOWSSDKVERSION",
                 "WINDOWSSDKDIR",
             }:
                 env[key.upper()] = value
     if env.get("WINDOWSSDKVERSION", "").rstrip("\\/") != shared.SDK_VERSION:
         raise ValueError("vcvarsall selected a different SDK")
+    if env.get("VCTOOLSVERSION", "").rstrip("\\/") != version:
+        raise ValueError("vcvarsall selected a different compiler version")
     compiler = Path(env["VCTOOLSINSTALLDIR"]) / "bin/Hostx64/x64/cl.exe"
     if shared._sha256(compiler) != identity["compiler_sha256"]:
         raise ValueError("vcvarsall selected a different compiler")

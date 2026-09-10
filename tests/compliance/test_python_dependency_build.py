@@ -88,24 +88,29 @@ def test_fixed_download_never_overwrites_existing_file(tmp_path) -> None:
     assert destination.read_bytes() == b"existing work"
 
 
-def test_build_environment_keeps_architecture_for_cmake(tmp_path, monkeypatch) -> None:
+@pytest.mark.parametrize("selected_version", ["14.44.35207", "14.50.12345"])
+def test_build_environment_keeps_architecture_and_exact_compiler(
+    tmp_path, monkeypatch, selected_version
+) -> None:
     monkeypatch.setenv("PROCESSOR_ARCHITECTURE", "AMD64")
     monkeypatch.setenv("NUMBER_OF_PROCESSORS", "4")
     monkeypatch.setattr(builder.shared, "_sha256", lambda _: "verified-tool")
     observed = {}
 
     def fake_run(command, **kwargs):
+        observed["command"] = command
         observed.update(kwargs["env"])
         return SimpleNamespace(
             returncode=0,
             stdout=(
                 f"WINDOWSSDKVERSION=10.0.26100.0\\\nVCTOOLSINSTALLDIR={tmp_path}\n"
+                f"VCTOOLSVERSION={selected_version}\n"
             ).encode(),
         )
 
     monkeypatch.setattr(builder.subprocess, "run", fake_run)
     monkeypatch.setattr(builder.subprocess, "CREATE_NO_WINDOW", 0, raising=False)
-    identity = {"compiler_sha256": "verified-tool"}
+    identity = {"compiler_sha256": "verified-tool", "vctools_version": "14.44.35207"}
     # The real Windows vcvars output is decoded using the Windows code page.
     if sys.platform != "win32":
         import codecs
@@ -113,9 +118,13 @@ def test_build_environment_keeps_architecture_for_cmake(tmp_path, monkeypatch) -
         codecs.register(
             lambda encoding: codecs.lookup("utf-8") if encoding == "mbcs" else None
         )
-    result = builder._build_environment(
-        tmp_path / "VS/MSBuild/Current/Bin/MSBuild.exe", identity, tmp_path
-    )
+    arguments = (tmp_path / "VS/MSBuild/Current/Bin/MSBuild.exe", identity, tmp_path)
+    if selected_version != identity["vctools_version"]:
+        with pytest.raises(ValueError, match="compiler"):
+            builder._build_environment(*arguments)
+        return
+    result = builder._build_environment(*arguments)
+    assert "-vcvars_ver=14.44.35207" in observed["command"]
     assert observed["PROCESSOR_ARCHITECTURE"] == "AMD64"
     assert observed["NUMBER_OF_PROCESSORS"] == "4"
     assert result["PROCESSOR_ARCHITECTURE"] == "AMD64"

@@ -83,8 +83,10 @@ and `runtime-artifact.json`, and extract the `compatible-python/` folder into
 `CHANGES-project-runtime.txt`; do not mix files from different builds.
 
 Alternatively, build from the pinned official CPython source with this project's
-audited recipe. This requires an existing x64 Python 3.12, Visual Studio 2022
-C++ Build Tools (v143), and Windows SDK 10.0.26100.0. The script downloads only the
+audited recipe. This requires an existing x64 Python 3.12, Visual Studio 2022 or
+2026 with MSVC 14.44 (v143), and Windows SDK 10.0.26100.0. The exact installed
+14.44 compiler is selected explicitly, not the IDE's default toolset. The script
+downloads only the
 four fixed, hash-checked inputs listed in
 [`compliance/python-runtime.json`](compliance/python-runtime.json); it does not
 install tools or alter the system Python. The output directory must not exist;

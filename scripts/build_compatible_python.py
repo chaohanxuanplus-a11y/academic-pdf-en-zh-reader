@@ -3,7 +3,7 @@
 
 """Build the fixed, minimal Windows project interpreter; never install system tools.
 
-Run with an existing Windows x64 Python 3.12 and installed VS 2022 C++ tools.
+Run with Windows x64 Python 3.12 and VS 2022/2026 with MSVC 14.44 (v143).
 The output is a conventional base interpreter, not a complete CPython distribution.
 Failure preserves the work directory. Successful output is committed by rename only.
 """
@@ -317,11 +317,10 @@ def _toolchain() -> tuple[Path, dict[str, str], dict[str, str]]:
         _run(
             [
                 str(vswhere),
-                "-latest",
                 "-products",
                 "*",
                 "-version",
-                "[17.0,18.0)",
+                "[17.0,19.0)",
                 "-requires",
                 "Microsoft.VisualStudio.Component.VC.Tools.x86.x64",
                 "-format",
@@ -330,16 +329,28 @@ def _toolchain() -> tuple[Path, dict[str, str], dict[str, str]]:
             ]
         )
     )
-    if not instances:
-        raise RuntimeError("Visual Studio 2022 C++ Build Tools are required")
-    installation = Path(instances[0]["installationPath"])
+    for instance in instances:
+        if not re.fullmatch(
+            r"(?:17|18)\.\d+\.\d+\.\d+", instance["installationVersion"]
+        ):
+            continue
+        installation = Path(instance["installationPath"])
+        # VS 2026 can carry v143 side by side with its newer default compiler.
+        # Never infer the toolset from the IDE version or the default-version file.
+        versions = [
+            path.name
+            for path in (installation / "VC/Tools/MSVC").glob("14.44.*")
+            if re.fullmatch(r"14\.44\.\d+", path.name)
+            and (path / "bin/Hostx64/x64/cl.exe").is_file()
+        ]
+        if versions:
+            version = max(versions, key=lambda value: int(value.rsplit(".", 1)[1]))
+            break
+    else:
+        raise RuntimeError(
+            "Visual Studio 2022/2026 with the MSVC 14.44 v143 toolset is required"
+        )
     msbuild = installation / "MSBuild/Current/Bin/MSBuild.exe"
-    version_file = (
-        installation / "VC/Auxiliary/Build/Microsoft.VCToolsVersion.default.txt"
-    )
-    version = version_file.read_text(encoding="utf-8").strip()
-    if not re.fullmatch(r"14\.\d+\.\d+", version):
-        raise ValueError("unrecognized v143 compiler version")
     compiler = installation / "VC/Tools/MSVC" / version / "bin/Hostx64/x64/cl.exe"
     sdk_bin = program_files / "Windows Kits/10/bin" / SDK_VERSION / "x64"
     for required in (msbuild, compiler, sdk_bin / "rc.exe", sdk_bin / "mt.exe"):
@@ -350,7 +361,7 @@ def _toolchain() -> tuple[Path, dict[str, str], dict[str, str]]:
     environment = dict(os.environ)
     environment["PATH"] = str(sdk_bin) + os.pathsep + environment.get("PATH", "")
     identity = {
-        "visual_studio_version": instances[0]["installationVersion"],
+        "visual_studio_version": instance["installationVersion"],
         "vctools_version": version,
         "platform_toolset": "v143",
         "sdk_version": SDK_VERSION,
