@@ -56,7 +56,10 @@ candidates, policies, or output paths.
 ## State route
 
 Use only two production front doors, following
-[the runbook](references/runbook.md):
+[the runbook](references/runbook.md). On Windows, first select the matching
+project-compatible CPython 3.12.14 base as described there; use its explicit
+`uv run --python` route for every stage. A system/build-bootstrap Python is not a
+substitute, and runtime selection never authorizes bypassing the LPAC gate:
 
 1. `scripts/prepare_job.py` alone creates a managed job and advances it through
    trusted preflight, A4 page normalization, and extraction to `EXTRACTED`.

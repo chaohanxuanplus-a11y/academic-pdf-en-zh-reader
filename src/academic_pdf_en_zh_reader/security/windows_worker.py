@@ -5,6 +5,8 @@
 
 from __future__ import annotations
 
+import base64
+import csv
 import ctypes
 import hashlib
 import json
@@ -12,7 +14,6 @@ import os
 import re
 import secrets
 import shutil
-import socket
 import stat
 import subprocess
 import sys
@@ -20,7 +21,7 @@ import sysconfig
 import tempfile
 import threading
 import time
-from collections.abc import Iterable, Mapping
+from collections.abc import Callable, Iterable, Mapping
 from contextlib import suppress
 from dataclasses import dataclass, fields, replace
 from pathlib import Path
@@ -320,6 +321,12 @@ if os.name == "nt":
         wintypes.HANDLE,
     ]
     _kernel32.AssignProcessToJobObject.restype = wintypes.BOOL
+    _kernel32.IsProcessInJob.argtypes = [
+        wintypes.HANDLE,
+        wintypes.HANDLE,
+        ctypes.POINTER(wintypes.BOOL),
+    ]
+    _kernel32.IsProcessInJob.restype = wintypes.BOOL
     _kernel32.TerminateJobObject.argtypes = [wintypes.HANDLE, wintypes.UINT]
     _kernel32.TerminateJobObject.restype = wintypes.BOOL
     _kernel32.CreateFileW.argtypes = [
@@ -535,6 +542,7 @@ _EXPECTED_JOB_FLAGS = (
     | _JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
 )
 _ALLOWED_ENABLED_PRIVILEGES = {"SeChangeNotifyPrivilege"}
+_KILL_ON_CLOSE_PROBE_NATURAL_EXIT_CODE = 73
 _BUILTIN_USERS_SID = "S-1-5-32-545"
 _EVERYONE_SID = "S-1-1-0"
 _RESTRICTED_CODE_SID = "S-1-5-12"
@@ -594,7 +602,7 @@ _RENDERING_DEPENDENCIES = (
     ("referencing", "0.37.0", ("referencing",)),
     ("rpds-py", "2026.6.3", ("rpds",)),
     ("typing-extensions", "4.16.0", ("typing_extensions.py",)),
-    ("pillow", "12.3.0", ("PIL",)),
+    ("pillow", "12.3.0", ("PIL", "pillow.libs")),
     (
         "pypdfium2",
         "5.13.0",
@@ -1152,9 +1160,31 @@ def _rendering_runtime_manifest() -> tuple[
             raise SandboxUnavailableError(
                 f"{distribution_name} distribution has no file manifest"
             )
+        sidecar_records: dict[str, tuple[str, str]] = {}
+        if distribution_name == "pillow":
+            record = distribution.read_text("RECORD")
+            if not isinstance(record, str):
+                raise SandboxUnavailableError("Pillow distribution has no RECORD")
+            files = [entry for entry in files if entry.parts[0] != "pillow.libs"]
+            for row in csv.reader(record.splitlines()):
+                if not row:
+                    continue
+                entry = metadata.PackagePath(row[0])
+                if not entry.parts or entry.parts[0] != "pillow.libs":
+                    continue
+                name = entry.as_posix()
+                if len(row) != 3 or name in sidecar_records:
+                    raise SandboxUnavailableError("Pillow sidecar RECORD is invalid")
+                sidecar_records[name] = (row[1], row[2])
+                # Distribution.files may omit missing files; RECORD must not.
+                files.append(entry)
         matched = 0
         for entry in files:
             parts = tuple(entry.parts)
+            if parts and parts[0] in package_roots and ".." in parts:
+                raise SandboxUnavailableError(
+                    "rendering runtime RECORD path contains parent traversal"
+                )
             if (
                 not parts
                 or parts[0] not in package_roots
@@ -1172,8 +1202,20 @@ def _rendering_runtime_manifest() -> tuple[
                     "rendering runtime contains an unavailable or reparse file: "
                     + relative.as_posix()
                 )
+            size = source.stat().st_size
+            digest = _file_sha256(source)
+            if parts[0] == "pillow.libs":
+                record_hash, record_size = sidecar_records[entry.as_posix()]
+                encoded_hash = base64.urlsafe_b64encode(bytes.fromhex(digest))
+                if record_hash != "sha256=" + encoded_hash.rstrip(b"=").decode(
+                    "ascii"
+                ) or record_size != str(size):
+                    raise SandboxUnavailableError(
+                        "Pillow sidecar differs from its RECORD size/hash: "
+                        + relative.as_posix()
+                    )
             seen_paths.add(normalized)
-            manifest.append((relative, source.stat().st_size, _file_sha256(source)))
+            manifest.append((relative, size, digest))
             matched += 1
         if matched == 0:
             raise SandboxUnavailableError(
@@ -1963,6 +2005,12 @@ def _enabled_privileges(token: object) -> list[str]:
         )
         if not entry.Attributes & 0x00000002:
             continue
+        # SE_CHANGE_NOTIFY_PRIVILEGE has a well-known LUID; LPAC cannot use
+        # the privilege-name lookup service. All other enabled LUIDs still
+        # require successful name resolution and the unchanged allowlist.
+        if (entry.Luid.LowPart, entry.Luid.HighPart) == (23, 0):
+            names.append("SeChangeNotifyPrivilege")
+            continue
         length = wintypes.DWORD()
         _advapi32.LookupPrivilegeNameW(
             None,
@@ -2630,6 +2678,79 @@ def _close_job_and_verify_descendant(
         _close_handle(descendant)
 
 
+def _single_worker_probe_ready(
+    stdout_thread: threading.Thread,
+    stderr_thread: threading.Thread,
+    stdout_state: Mapping[str, Any],
+    stderr_state: Mapping[str, Any],
+    process_id: int,
+    limits: WorkerLimits,
+) -> WorkerResponse:
+    stdout_thread.join(timeout=limits.wall_time_seconds)
+    stderr_thread.join(timeout=min(2.0, limits.wall_time_seconds))
+    if stdout_thread.is_alive() or stderr_thread.is_alive():
+        raise WorkerTimeoutError("kill-on-close probe did not close its ready channels")
+    if any(state.get("overflow") for state in (stdout_state, stderr_state)):
+        raise WorkerOutputLimitError("kill-on-close ready channel exceeded its limit")
+    if any(state.get("reader_error") for state in (stdout_state, stderr_state)):
+        raise WorkerExecutionError("kill-on-close ready channel could not be read")
+    try:
+        response = decode_response(stdout_state.get("data", b""), limits)
+    except ProtocolError as error:
+        raise WorkerExecutionError("kill-on-close ready response is invalid") from error
+    result = response.result or {}
+    privileges = result.get("enabled_privileges")
+    lpac_supported = result.get("less_privileged_appcontainer_query_supported")
+    lpac = result.get("less_privileged_appcontainer")
+    if (
+        response.status != "ok"
+        or result.get("ready") is not True
+        or type(result.get("process_id")) is not int
+        or result.get("process_id") != process_id
+        or result.get("appcontainer") is not True
+        or type(result.get("capability_count")) is not int
+        or result.get("capability_count") != 0
+        or not isinstance(privileges, list)
+        or any(name not in _ALLOWED_ENABLED_PRIVILEGES for name in privileges)
+        or not (
+            (lpac_supported is True and lpac is True)
+            or (lpac_supported is False and lpac is None)
+        )
+    ):
+        raise WorkerExecutionError("kill-on-close ready response is not verified LPAC")
+    return response
+
+
+def _close_job_and_verify_worker(
+    job: object, process: object, close_job: Callable[[], None]
+) -> dict[str, object]:
+    if _kernel32.WaitForSingleObject(process, 0) != 258:
+        raise WorkerExecutionError("kill-on-close worker was not alive before close")
+    belongs = wintypes.BOOL()
+    if not _kernel32.IsProcessInJob(process, job, ctypes.byref(belongs)):
+        raise _win_error("IsProcessInJob(kill-on-close probe)")
+    if not belongs.value:
+        raise WorkerExecutionError("kill-on-close worker belongs to a different Job")
+    close_job()
+    if _kernel32.WaitForSingleObject(process, 2000) != 0:
+        raise WorkerExecutionError("Job close did not terminate the live worker")
+    exit_code = wintypes.DWORD()
+    if not _kernel32.GetExitCodeProcess(process, ctypes.byref(exit_code)):
+        raise _win_error("GetExitCodeProcess(kill-on-close probe)")
+    if exit_code.value in (_KILL_ON_CLOSE_PROBE_NATURAL_EXIT_CODE, 259):
+        raise WorkerExecutionError(
+            "Job close did not preempt the worker's natural exit"
+        )
+    return {
+        "verified": True,
+        "scope": "single-worker-kill-on-close",
+        "alive_before_close": True,
+        "job_membership_verified": True,
+        "exit_code": exit_code.value,
+        "expected_natural_exit_code": _KILL_ON_CLOSE_PROBE_NATURAL_EXIT_CODE,
+    }
+
+
 def _run_worker(
     request: WorkerRequest,
     workspace_root: Path,
@@ -2652,6 +2773,12 @@ def _run_worker(
         and request.parameters.get("case") == "spawn_for_kill_probe"
         and limits.active_process_limit == 2
     )
+    single_worker_kill_probe = bool(
+        request.operation == "probe"
+        and request.parameters.get("case") == "single_worker_kill_on_close"
+    )
+    if single_worker_kill_probe and test_only_restricted_adapter:
+        raise SandboxUnavailableError("single-worker kill probe requires real LPAC")
     if limits.active_process_limit != 1 and not multiple_process_probe:
         raise SandboxUnavailableError(
             "production workers require an active process limit of exactly one"
@@ -2930,6 +3057,27 @@ def _run_worker(
             _write_pipe(parent_stdin, request_bytes)
         parent_stdin = None
 
+        if single_worker_kill_probe:
+            _single_worker_probe_ready(
+                stdout_thread,
+                stderr_thread,
+                stdout_state,
+                stderr_state,
+                process_info.dwProcessId,
+                limits,
+            )
+
+            def close_probe_job() -> None:
+                nonlocal job
+                if not _kernel32.CloseHandle(job):
+                    raise SandboxCleanupError("kill-on-close Job handle close failed")
+                job = None
+
+            kill_evidence = _close_job_and_verify_worker(job, process, close_probe_job)
+            process_exit_confirmed = True
+            provenance["worker_kill_on_close_evidence"] = kill_evidence
+            provenance["worker_killed_on_job_close"] = True
+
         wait_result = _kernel32.WaitForSingleObject(
             process, max(1, int(limits.wall_time_seconds * 1000))
         )
@@ -2961,7 +3109,7 @@ def _run_worker(
             raise WorkerExecutionError("worker pipe did not close with the Job Object")
         if timed_out:
             raise WorkerTimeoutError("worker exceeded the wall-clock limit")
-        if exit_code.value:
+        if exit_code.value and not single_worker_kill_probe:
             if "END_OF_PROCESS_TIME" in message_names:
                 raise WorkerCpuLimitError(
                     "Job completion port reported END_OF_PROCESS_TIME",
@@ -3094,10 +3242,18 @@ def _run_worker(
     finally:
         active_error = sys.exception()
         cleanup_errors: list[str] = []
-        if process and not process_exit_confirmed and not process_assigned_to_job:
+        if (
+            process
+            and not process_exit_confirmed
+            and (not process_assigned_to_job or job is None)
+        ):
             retry_errors, process_exit_confirmed = _terminate_process_and_wait(
                 process,
-                label="unassigned child during final cleanup",
+                label=(
+                    "unassigned child during final cleanup"
+                    if not process_assigned_to_job
+                    else "worker after Job close during final cleanup"
+                ),
             )
             if process_exit_confirmed:
                 unassigned_process_errors = []
@@ -3443,7 +3599,9 @@ def _excluded_event_evidence(handle_value: int) -> dict[str, object]:
         }
 
 
-def _probe_case(request: WorkerRequest) -> dict[str, object]:
+def _probe_case(
+    request: WorkerRequest, limits: WorkerLimits = DEFAULT_LIMITS
+) -> dict[str, object]:
     case = request.parameters.get("case")
     if not isinstance(case, str):
         raise ValueError("probe case must be a string")
@@ -3482,14 +3640,14 @@ def _probe_case(request: WorkerRequest) -> dict[str, object]:
                 stderr=child_stderr,
             )
 
-    if case == "inspect":
+    if case in {"inspect", "single_worker_kill_on_close"}:
         restricted, privileges, appcontainer, capability_count = (
             _current_process_security()
         )
         lpac_status, lpac_query_supported = (
             _current_process_lpac_status() if appcontainer else (None, False)
         )
-        return {
+        result = {
             "restricted_token": restricted,
             "enabled_privileges": privileges,
             "appcontainer": appcontainer,
@@ -3498,6 +3656,20 @@ def _probe_case(request: WorkerRequest) -> dict[str, object]:
             "less_privileged_appcontainer_query_supported": lpac_query_supported,
             "process_id": os.getpid(),
         }
+        if case == "single_worker_kill_on_close":
+            if not _current_process_has_zero_capability_appcontainer():
+                raise SandboxUnavailableError("single-worker kill probe requires LPAC")
+            result["ready"] = True
+            sys.stdout.buffer.write(encode_response(WorkerResponse.ok(result), limits))
+            sys.stdout.buffer.flush()
+            # Both bounded readers must finish before the parent closes its Job;
+            # no reader may later use that released handle on output overflow.
+            sys.stderr.flush()
+            os.close(sys.stderr.fileno())
+            os.close(sys.stdout.fileno())
+            time.sleep(limits.wall_time_seconds * 2)
+            os._exit(_KILL_ON_CLOSE_PROBE_NATURAL_EXIT_CODE)
+        return result
     if case == "outside_access":
         outside_parameter = request.parameters.get("path")
         outside = (
@@ -3514,18 +3686,38 @@ def _probe_case(request: WorkerRequest) -> dict[str, object]:
             }
         return {"outside_access_denied": False, "error_code": None}
     if case == "network_connect":
-        import socket
+        if not _current_process_has_zero_capability_appcontainer():
+            raise SandboxUnavailableError("network probe requires verified LPAC")
+
+        try:
+            import socket
+        except ImportError as error:
+            # CPython's WSAStartup failure is distinct from a missing/broken module.
+            if (
+                type(error) is not ImportError
+                or str(error) != "WSAStartup failed: error code 10107"
+            ):
+                raise
+            return {
+                "network_denied": True,
+                "phase": "initialization",
+                "error_code": 10107,
+            }
 
         port = int(request.parameters.get("port", 0))
         try:
             connection = socket.create_connection(("127.0.0.1", port), timeout=1)
         except OSError as error:
+            code = _normalized_windows_error(error)
+            if code != 10013:
+                raise
             return {
                 "network_denied": True,
-                "error_code": getattr(error, "winerror", None),
+                "phase": "connect",
+                "error_code": code,
             }
         connection.close()
-        return {"network_denied": False, "error_code": None}
+        return {"network_denied": False, "phase": "connect", "error_code": None}
     if case == "parent_process_access":
         parent_id = int(request.parameters.get("parent_id", 0))
         access_masks = {
@@ -4496,7 +4688,7 @@ def _dispatch_request(
     limits: WorkerLimits,
 ) -> WorkerResponse:
     if request.operation == "probe":
-        return WorkerResponse.ok(_probe_case(request))
+        return WorkerResponse.ok(_probe_case(request, limits))
     if request.operation == "preflight":
         return _run_preflight_request(request, limits)
     if request.operation == "extract":
@@ -4820,6 +5012,18 @@ def child_main(limits: WorkerLimits = DEFAULT_LIMITS) -> int:
     return 0
 
 
+def _network_probe_denial_verified(
+    is_lpac: bool, evidence: Mapping[str, object]
+) -> bool:
+    return bool(
+        is_lpac is True
+        and evidence.get("network_denied") is True
+        and type(evidence.get("error_code")) is int
+        and (evidence.get("phase"), evidence.get("error_code"))
+        in (("initialization", 10107), ("connect", 10013))
+    )
+
+
 def run_security_probe() -> dict[str, object]:
     """Exercise every minimum contract and report failures as evidence."""
 
@@ -4910,6 +5114,8 @@ def run_security_probe() -> dict[str, object]:
     handle_count_before: int | None = None
     handle_count_after: int | None = None
     try:
+        import socket
+
         with tempfile.TemporaryDirectory(prefix="worker-probe-source-") as source_root:
             source_root_path = Path(source_root).resolve(strict=True)
             source = source_root_path / "paper.pdf"
@@ -5024,8 +5230,8 @@ def run_security_probe() -> dict[str, object]:
                 finally:
                     listener.close()
                 loopback_result = loopback.response.result or {}
-                minimum["loopback_isolation"] = bool(
-                    is_appcontainer and loopback_result.get("network_denied")
+                minimum["loopback_isolation"] = _network_probe_denial_verified(
+                    is_lpac, loopback_result
                 )
                 provenance["loopback_evidence"] = loopback_result
                 record_handles("after_loopback")
@@ -5103,16 +5309,15 @@ def run_security_probe() -> dict[str, object]:
                     WorkerRequest(
                         operation="probe",
                         input_path="input.pdf",
-                        parameters={"case": "spawn_for_kill_probe"},
+                        parameters={"case": "single_worker_kill_on_close"},
                     ),
                     copied.root,
-                    limits=replace(DEFAULT_LIMITS, active_process_limit=2),
                 )
                 minimum["kill_on_job_close"] = bool(
-                    kill_probe.provenance.get("descendant_killed_on_job_close")
+                    kill_probe.provenance.get("worker_killed_on_job_close") is True
                 )
                 provenance["kill_on_close_evidence"] = (
-                    kill_probe.provenance.get("descendant_kill_evidence")
+                    kill_probe.provenance.get("worker_kill_on_close_evidence")
                     or kill_probe.response.result
                 )
                 record_handles("after_kill_on_close")

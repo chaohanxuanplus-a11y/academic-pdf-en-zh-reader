@@ -661,6 +661,74 @@ def test_lpac_token_query_treats_unsupported_class_as_unavailable(
 
 
 @pytest.mark.parametrize(
+    ("low_part", "high_part", "attributes", "expected"),
+    [
+        (23, 0, 2, ["SeChangeNotifyPrivilege"]),
+        (23, 0, 0, []),
+        (22, 0, 0, []),
+        (22, 0, 2, None),
+        (24, 0, 2, None),
+        (23, 1, 2, None),
+    ],
+)
+def test_privilege_check_recognizes_only_exact_change_notify_luid_without_lookup(
+    monkeypatch: pytest.MonkeyPatch,
+    low_part: int,
+    high_part: int,
+    attributes: int,
+    expected: list[str] | None,
+) -> None:
+    class TokenPrivileges(ctypes.Structure):
+        _fields_ = [
+            ("PrivilegeCount", windows_worker.wintypes.DWORD),
+            ("Privileges", windows_worker._LUID_AND_ATTRIBUTES * 1),
+        ]
+
+    payload = TokenPrivileges()
+    payload.PrivilegeCount = 1
+    payload.Privileges[0].Luid.LowPart = low_part
+    payload.Privileges[0].Luid.HighPart = high_part
+    payload.Privileges[0].Attributes = attributes
+    lookups = []
+
+    class LpacTokenApi:
+        def GetTokenInformation(self, _token, info, buffer, _size, returned):
+            assert info == 3
+            returned._obj.value = ctypes.sizeof(payload)
+            if buffer is not None:
+                ctypes.memmove(buffer, ctypes.byref(payload), ctypes.sizeof(payload))
+                return True
+            return False
+
+        def LookupPrivilegeNameW(self, *_args):
+            lookups.append(True)
+            ctypes.set_last_error(6)
+            return False
+
+    monkeypatch.setattr(windows_worker, "_advapi32", LpacTokenApi())
+    if expected is None:
+        with pytest.raises(SandboxUnavailableError, match="LookupPrivilegeNameW"):
+            windows_worker._enabled_privileges(123)
+        assert lookups == [True]
+    else:
+        assert windows_worker._enabled_privileges(123) == expected
+        assert lookups == []
+
+
+def test_change_notify_well_known_luid_matches_the_host_windows_api() -> None:
+    api = ctypes.WinDLL("advapi32", use_last_error=True).LookupPrivilegeValueW
+    api.argtypes = [
+        windows_worker.wintypes.LPCWSTR,
+        windows_worker.wintypes.LPCWSTR,
+        ctypes.POINTER(windows_worker._LUID),
+    ]
+    api.restype = windows_worker.wintypes.BOOL
+    value = windows_worker._LUID()
+    assert api(None, "SeChangeNotifyPrivilege", ctypes.byref(value))
+    assert (value.LowPart, value.HighPart) == (23, 0)
+
+
+@pytest.mark.parametrize(
     ("lpac_status", "query_supported", "expected"),
     (
         (True, True, True),
@@ -1214,6 +1282,7 @@ def test_repeated_output_limit_failures_do_not_accumulate_handles(
         ("busy_loop", "cpu_time_limit"),
         ("allocate_limit", "memory_limit"),
         ("oversize_output", "bounded_versioned_json"),
+        ("single_worker_kill_on_close", "kill_on_job_close"),
     ],
 )
 def test_probe_rejects_expected_limit_with_cleanup_failure(
@@ -1252,7 +1321,11 @@ def test_probe_rejects_expected_limit_with_cleanup_failure(
         elif case == "outside_access":
             result = {"outside_access_denied": True}
         elif case == "network_connect":
-            result = {"network_denied": True}
+            result = {
+                "network_denied": True,
+                "phase": "connect",
+                "error_code": 10013,
+            }
         elif case == "parent_process_access":
             result = {"access": {"vm_write": {"denied": True}}}
         elif case == "excluded_inheritable_handle":
@@ -1260,9 +1333,14 @@ def test_probe_rejects_expected_limit_with_cleanup_failure(
         elif case == "spawn_child":
             result = {"spawn_denied": True}
             provenance["job_messages"] = [{"name": "ACTIVE_PROCESS_LIMIT"}]
-        elif case == "spawn_for_kill_probe":
-            provenance["descendant_killed_on_job_close"] = True
-            provenance["descendant_kill_evidence"] = {"verified": True}
+        elif case == "single_worker_kill_on_close":
+            if cleanup_failure_case == case:
+                raise SandboxCleanupError("simulated AppContainer cleanup failure")
+            provenance["worker_killed_on_job_close"] = True
+            provenance["worker_kill_on_close_evidence"] = {
+                "verified": True,
+                "scope": "single-worker-kill-on-close",
+            }
         elif case == "sleep":
             expected_error(WorkerTimeoutError("expected timeout"), case)
         elif case == "busy_for":

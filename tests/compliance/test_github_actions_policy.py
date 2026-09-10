@@ -45,7 +45,7 @@ class GitHubActionsPolicyTests(unittest.TestCase):
             self.assertNotRegex(text, r"(?m)^\s*-?\s*uses:\s*[^\n#]+@(v|main|master)\b")
         self.assertEqual(expected, actual)
 
-    def test_windows_runtime_uses_official_cpython(self) -> None:
+    def test_windows_runtime_builds_the_pinned_project_cpython(self) -> None:
         ci = (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
         quality, remaining = ci.split("  windows-runtime:\n", 1)
         windows, _remaining_jobs = remaining.split("\n  reuse:\n", 1)
@@ -66,11 +66,12 @@ class GitHubActionsPolicyTests(unittest.TestCase):
             windows,
         )
         self.assertIn(
-            'uv sync --frozen --all-groups --python "$env:pythonLocation\\python.exe"',
+            "uv sync --frozen --all-groups "
+            '--python ".tools/compatible-python/python.exe"',
             windows,
         )
         self.assertIn(
-            'uv run --python "$env:pythonLocation\\python.exe" --frozen pytest -q',
+            'uv run --python ".tools/compatible-python/python.exe" --frozen pytest -q',
             windows,
         )
         self.assertIn(
@@ -79,10 +80,63 @@ class GitHubActionsPolicyTests(unittest.TestCase):
             windows,
         )
         self.assertIn("python scripts/probe_worker_sandbox.py", windows)
+        build_command = (
+            "python scripts/build_compatible_python.py "
+            "--output-dir .tools/compatible-python"
+        )
+        self.assertIn(build_command, windows)
+        self.assertLess(windows.index(build_command), windows.index("uv sync"))
+        self.assertIn('PYTHONDONTWRITEBYTECODE: "1"', windows)
         self.assertNotIn(
             "test_full_security_probe_is_truthful_and_fail_closed",
             windows,
         )
+
+    def test_compatible_runtime_cannot_be_skipped_or_replaced(self) -> None:
+        for filename in ("ci.yml", "release.yml"):
+            original = (ROOT / ".github/workflows" / filename).read_text(
+                encoding="utf-8"
+            )
+            for mutated in (
+                original.replace(
+                    "python scripts/build_compatible_python.py", "python skipped.py"
+                ),
+                original.replace(
+                    '".tools/compatible-python/python.exe"', '"unverified/python.exe"'
+                ),
+                original.replace(
+                    'PYTHONDONTWRITEBYTECODE: "1"', 'PYTHONDONTWRITEBYTECODE: "0"'
+                ),
+            ):
+                with self.subTest(filename=filename, mutation=mutated):
+                    self.assertTrue(
+                        validate_workflow_text(
+                            f".github/workflows/{filename}", mutated, self.inventory
+                        )
+                    )
+
+    def test_runtime_release_transfer_is_same_run_and_fail_closed(self) -> None:
+        original = (ROOT / ".github/workflows/release.yml").read_text(encoding="utf-8")
+        for mutated in (
+            original.replace(
+                "python scripts/package_python_runtime.py", "python skipped.py"
+            ),
+            original.replace("digest-mismatch: error", "digest-mismatch: warn"),
+            original.replace(
+                "digest-mismatch: error",
+                "digest-mismatch: error\n          run-id: 123",
+            ),
+            original.replace(
+                "name: tested-windows-python-runtime", "name: unverified-runtime", 1
+            ),
+            original.replace("runtime.spdx.json", "unrelated.spdx.json"),
+        ):
+            with self.subTest(mutation=mutated):
+                self.assertTrue(
+                    validate_workflow_text(
+                        ".github/workflows/release.yml", mutated, self.inventory
+                    )
+                )
 
     def test_mutable_or_unreviewed_action_is_rejected(self) -> None:
         original = (ROOT / ".github" / "workflows" / "ci.yml").read_text(
@@ -179,7 +233,7 @@ class GitHubActionsPolicyTests(unittest.TestCase):
         )
         self.assertIn("spdx-json", release)
         self.assertIn("pypa/gh-action-pip-audit", release)
-        self.assertEqual(2, len(re.findall(r"(?m)^\s+file: dist/release/", release)))
+        self.assertEqual(3, len(re.findall(r"(?m)^\s+file: dist/release/", release)))
         self.assertNotIn("path: dist/release/academic-pdf", release)
         self.assertIn("SHA256SUMS", release)
         self.assertIn("asset-manifest.json", release)
@@ -242,12 +296,12 @@ class GitHubActionsPolicyTests(unittest.TestCase):
             windows,
         )
         self.assertIn(
-            'uv run --python "$env:pythonLocation\\python.exe" --frozen '
+            'uv run --python ".tools/compatible-python/python.exe" --frozen '
             "python scripts/probe_worker_sandbox.py",
             windows,
         )
         self.assertIn(
-            'uv run --python "$env:pythonLocation\\python.exe" --frozen pytest -q '
+            'uv run --python ".tools/compatible-python/python.exe" --frozen pytest -q '
             "tests/security/test_finish_worker_boundary.py::"
             "test_production_finish_completes_render_and_qa_in_lpac",
             windows,

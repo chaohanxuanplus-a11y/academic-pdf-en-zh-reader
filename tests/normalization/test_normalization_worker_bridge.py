@@ -44,6 +44,22 @@ def _descriptor(path: str, payload: bytes) -> dict[str, object]:
     }
 
 
+def _mock_lpac_token(monkeypatch: pytest.MonkeyPatch) -> None:
+    from academic_pdf_en_zh_reader.security import windows_worker
+
+    monkeypatch.setattr(
+        windows_worker, "_current_process_security", lambda: (True, [], True, 0)
+    )
+    monkeypatch.setattr(
+        windows_worker, "_current_process_lpac_status", lambda: (True, True)
+    )
+    monkeypatch.setattr(
+        windows_worker,
+        "_open_current_token",
+        lambda *_args: pytest.fail("unit test must not query the host Windows token"),
+    )
+
+
 def test_normalization_request_has_one_exact_production_shape() -> None:
     limits = WorkerLimits(max_protocol_bytes=4096)
     request = _request()
@@ -240,6 +256,20 @@ def test_restricted_adapter_refuses_normalization_before_core_import(
     }
 
 
+def test_normalization_rejects_a_zero_capability_token_that_is_not_lpac(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from academic_pdf_en_zh_reader.security import windows_worker
+
+    _mock_lpac_token(monkeypatch)
+    monkeypatch.setattr(
+        windows_worker, "_current_process_lpac_status", lambda: (False, True)
+    )
+    response = windows_worker._run_normalization_request(_request(), WorkerLimits())
+    assert response.status == "error"
+    assert response.error["code"] == "SANDBOX_CONTRACT_UNVERIFIED"
+
+
 def test_normalization_handler_binds_core_outputs_before_writing(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -303,11 +333,7 @@ def test_normalization_handler_binds_core_outputs_before_writing(
             ),
         }
 
-    monkeypatch.setattr(
-        windows_worker,
-        "_current_process_security",
-        lambda: (True, [], True, 0),
-    )
+    _mock_lpac_token(monkeypatch)
     monkeypatch.setattr(
         windows_worker,
         "_read_prevalidated_appcontainer_file",
@@ -373,11 +399,7 @@ def test_normalization_handler_rejects_unbound_core_artifact(
         "pages": [],
     }
     result = core.NormalizationResult(pdf_bytes=pdf, artifact=artifact)
-    monkeypatch.setattr(
-        windows_worker,
-        "_current_process_security",
-        lambda: (True, [], True, 0),
-    )
+    _mock_lpac_token(monkeypatch)
     monkeypatch.setattr(
         windows_worker,
         "_read_prevalidated_appcontainer_file",

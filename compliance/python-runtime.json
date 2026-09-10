@@ -1,0 +1,76 @@
+{
+  "schema_version": 1,
+  "runtime": "project-cpython-windows-x64",
+  "version": "3.12.14",
+  "sdk_version": "10.0.26100.0",
+  "platform_toolset": "v143",
+  "bit_identical_reproducibility_verified": false,
+  "recipe": "scripts/build_compatible_python.py",
+  "policy_note": "Fixed-input minimal project runtime. Preserve normal LPAC, C implementations, EXE manifests and mitigations. Omit only shared DLL RT_MANIFEST source lines in PC/python_nt.rc and PC/sqlite3.rc. No signed upstream DLL is modified. libffi is an upstream pinned binary dependency, not built from source here. SQLite is upgraded through the upstream sqlite3Dir build property, without C patches. Build Tools and SDK are not redistributed. Each build records its actual compiler/runtime file hashes; this inventory alone is not production validation.",
+  "targets": [
+    "_freeze_module", "python", "pythonw", "python3dll", "_ctypes", "_socket",
+    "select", "pyexpat", "unicodedata", "_overlapped", "_multiprocessing", "sqlite3", "_sqlite3"
+  ],
+  "sources": [
+    {
+      "name": "cpython",
+      "version": "3.12.14",
+      "kind": "source",
+      "url": "https://www.python.org/ftp/python/3.12.14/Python-3.12.14.tgz",
+      "sha256": "6c6df908d2c3fd24e6d76869e92542abd0f33aec9dfc18df8875f89660286d43",
+      "archive_root": "Python-3.12.14",
+      "filename": "Python-3.12.14.tgz",
+      "license": "PSF-2.0",
+      "license_file": "LICENSE"
+    },
+    {
+      "name": "zlib",
+      "version": "1.3.1",
+      "kind": "source",
+      "url": "https://codeload.github.com/python/cpython-source-deps/zip/4dc98e1909830e2bdc2a9cc2236e3c5d5037335b",
+      "sha256": "39d867c083ebc37c77cf03a442f87c0f83db006eb64343bd4a19f1c84c26f50c",
+      "archive_root": "cpython-source-deps-4dc98e1909830e2bdc2a9cc2236e3c5d5037335b",
+      "filename": "zlib-1.3.1.zip",
+      "license": "Zlib",
+      "license_file": "LICENSE"
+    },
+    {
+      "name": "libffi",
+      "version": "3.4.4",
+      "kind": "upstream-binary-dependency",
+      "url": "https://codeload.github.com/python/cpython-bin-deps/zip/94cb9a1c7feb608adf2b9f8fe2dbd6925ffbf90d",
+      "sha256": "6b0f53490e0dd958708bff32df689cf2163c214147fcb8edb76a403fa6a877ca",
+      "archive_root": "cpython-bin-deps-94cb9a1c7feb608adf2b9f8fe2dbd6925ffbf90d",
+      "filename": "libffi-3.4.4.zip",
+      "license": "MIT",
+      "license_file": "LICENSE"
+    },
+    {
+      "name": "sqlite3",
+      "version": "3.53.4",
+      "kind": "source",
+      "url": "https://codeload.github.com/python/cpython-source-deps/zip/f048e6a40879da9828ca2cf3b260f3e0a26117fb",
+      "sha256": "0c604ef459fad52cac8a6b0782a6dd4799bca5680053a99aa531d491f588ae3e",
+      "archive_root": "cpython-source-deps-f048e6a40879da9828ca2cf3b260f3e0a26117fb",
+      "filename": "sqlite-3.53.4.0.zip",
+      "build_directory": "sqlite-3.53.4.0",
+      "license": "blessing",
+      "license_file": "sqlite3.h",
+      "sqlite3_c_sha3_256": "67f423e9ebbbdc473cbc4772c872ee6b89f31fde4ed0279a5c25d5f65c043a16"
+    }
+  ],
+  "sqlite_security_review": {
+    "reviewed_on": "2026-09-10",
+    "upstream_cpython_default": "3.49.1.0",
+    "selected_python_dependency_tag": "sqlite-3.53.4.0",
+    "reason": "Use the current stable Python-maintained SQLite dependency rather than the older CPython default, incorporating SQLite fixes reported in 3.50.2, 3.50.3 and 3.53.2. This is not a guarantee that no vulnerabilities exist; production database use remains restricted to this project's fixed SQL and private data.",
+    "advisory_source": "https://www.sqlite.org/cves.html",
+    "release_source": "https://www.sqlite.org/releaselog/3_53_4.html",
+    "copyright_source": "https://www.sqlite.org/copyright.html"
+  },
+  "additional_binary_licenses": [
+    {"name": "Microsoft VC runtime", "source": "installed MSVC redist selected by upstream PCbuild", "notice": "PC/crtlicense.txt", "integrity": "actual build-manifest.json file hashes"},
+    {"name": "expat", "source": "pinned CPython source", "notice": "Modules/expat/COPYING", "license": "MIT"},
+    {"name": "HACL", "source": "pinned CPython source", "notice": "verbatim license headers under Modules/_hacl", "license": "MIT"}
+  ]
+}

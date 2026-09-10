@@ -3,8 +3,10 @@
 
 # Third-Party Notices
 
-No third-party code, PDF, or Python wheel is currently redistributed in this
-repository. One publisher-designed branding image is provided under a separate
+No third-party code source, user PDF, or Python wheel is vendored in the tracked
+repository or source/Skill ZIPs. A separately built Windows runtime is described
+below; it is not admitted for release until its live safety gates pass.
+One publisher-designed branding image is provided under a separate
 limited-purpose permission. The following three font binaries are redistributed
 so that rendering never depends on a user's system fonts.
 
@@ -99,6 +101,55 @@ License: SIL Open Font License 1.1 (`OFL-1.1`). See
 The locked development environment retrieves Python distributions from PyPI.
 Exact versions, source URLs, license evidence, and artifact hashes are recorded
 in `compliance/dependencies.json` and `uv.lock`.
+
+## Separate project-compatible CPython 3.12.14 runtime
+
+The runtime archive is intended and supported for this project's Windows x64
+workflow; this support scope does not change upstream license permissions. It
+is a minimal project build, not an official PSF binary, a full standard-library
+distribution, or an entirely source-built dependency stack. It omits SSL,
+tkinter, ensurepip, and other optional extensions. No upstream endorsement or
+bit-identical compiler-build guarantee is claimed.
+
+Exact input URLs and hashes are in `compliance/python-runtime.json`. The runtime
+preserves the following actual notices, rather than replacing them with this
+project's Apache-2.0 license:
+
+- CPython: PSF-2.0 and historical/component notices, retained verbatim in
+  `LICENSE.txt` and `licenses/CPython-LICENSE.txt`. The only intentional source
+  changes omit the shared-DLL manifest resource lines in `PC/python_nt.rc`
+  and `PC/sqlite3.rc` before building. C implementations and EXE manifests remain unchanged;
+  no signed upstream DLL is edited. The summary and per-build source hashes
+  are retained in `CHANGES-project-runtime.txt` and `build-manifest.json`.
+- zlib 1.3.1: Zlib license; the exact source notice is retained in
+  `licenses/zlib-LICENSE.txt`.
+- libffi 3.4.4: MIT license; the unmodified, pinned Python upstream x64 binary
+  and its notice are retained as `DLLs/libffi-8.dll` and
+  `licenses/libffi-LICENSE.txt`.
+- SQLite 3.53.4: upstream public-domain dedication (SPDX `blessing`); the exact
+  source header is retained in `licenses/sqlite3-LICENSE.txt`. The library is
+  compiled without C patches from Python's fixed official dependency commit
+  and selected through `sqlite3Dir`; this includes later upstream fixes than
+  CPython's default SQLite 3.49.1. See the specific security-review sources in
+  `compliance/python-runtime.json`, not a blanket vulnerability-free claim.
+- expat: MIT license; the notice accompanying the copy embedded in `pyexpat`
+  is retained from the pinned CPython source as `licenses/expat-COPYING.txt`.
+- HACL: actual copyright and license headers from the embedded CPython source
+  are preserved verbatim in `licenses/HACL-source-license-headers.txt`.
+- Microsoft `vcruntime140.dll` and `vcruntime140_1.dll`: copied by upstream
+  PCbuild from the installed v143 redistributable. The upstream Windows binary
+  conditions are retained in `LICENSE.txt` and
+  `licenses/Microsoft-runtime-notice.txt`; those conditions continue to apply
+  to Microsoft Distributable Code. Visual Studio Build Tools and the Windows
+  SDK are not redistributed.
+
+`licenses/CPython-upstream-license-reference.rst` preserves Python's wider
+license reference, including descriptions of optional modules not present in
+this minimal build; its presence is not a claim that OpenSSL or those modules
+are bundled. Keep all notices and `build-manifest.json` with the runtime.
+The separate `runtime-artifact.json` and release checksum list bind the archived
+files, while real LPAC and production tests in the same workflow run and SHA
+determine release eligibility. Build/package checks alone do not clear that gate.
 
 High-attention binary boundaries are:
 

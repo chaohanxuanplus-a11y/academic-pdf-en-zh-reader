@@ -3,12 +3,95 @@
 
 from __future__ import annotations
 
+import base64
+import hashlib
 import subprocess
 import sys
+from importlib import metadata
 from pathlib import Path
+
+import pytest
 
 from academic_pdf_en_zh_reader.security import windows_worker
 from academic_pdf_en_zh_reader.security.limits import WorkerLimits
+
+
+def _pillow_record_runtime(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> tuple[Path, Path]:
+    root = tmp_path / "site-packages"
+    pillow = next(
+        item for item in windows_worker._RENDERING_DEPENDENCIES if item[0] == "pillow"
+    )
+    recorded = ("PIL/__init__.py", "pillow.libs/libtiff-fixture.so.6.2.0")
+    rows = []
+    for name in (*recorded, "pillow.libs/unrecorded.so", "other.libs/unrelated.so"):
+        path = root / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        payload = name.encode("ascii")
+        path.write_bytes(payload)
+        if name in recorded:
+            digest = base64.urlsafe_b64encode(hashlib.sha256(payload).digest())
+            rows.append(f"{name},sha256={digest.rstrip(b'=').decode()},{len(payload)}")
+    info = root / f"pillow-{pillow[1]}.dist-info"
+    info.mkdir()
+    (info / "METADATA").write_text(
+        f"Name: pillow\nVersion: {pillow[1]}\n", encoding="utf-8"
+    )
+    (info / "RECORD").write_text("\n".join(rows) + "\n", encoding="utf-8")
+    distribution = metadata.PathDistribution(info)
+    monkeypatch.setattr(metadata, "distribution", lambda _name: distribution)
+    monkeypatch.setattr(windows_worker, "_RENDERING_DEPENDENCIES", (pillow,))
+    monkeypatch.setattr(windows_worker, "_RENDERING_RUNTIME_MANIFEST_CACHE", None)
+    return root, info
+
+
+def test_render_runtime_copies_only_recorded_pillow_sidecars(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root, _info = _pillow_record_runtime(tmp_path, monkeypatch)
+    source, manifest, _fingerprint = windows_worker._rendering_runtime_manifest()
+    expected = {"PIL/__init__.py", "pillow.libs/libtiff-fixture.so.6.2.0"}
+    assert source == root
+    assert {path.as_posix() for path, _size, _digest in manifest} == expected
+    destination = tmp_path / "copied"
+    windows_worker._copy_verified_manifest(source, destination, manifest)
+    assert {
+        path.relative_to(destination).as_posix()
+        for path in destination.rglob("*")
+        if path.is_file()
+    } == expected
+    for name in expected:
+        assert (destination / name).read_bytes() == (source / name).read_bytes()
+
+
+@pytest.mark.parametrize(
+    "invalid", ["missing", "modified", "traversal", "unhashed", "duplicate"]
+)
+def test_render_runtime_rejects_invalid_recorded_pillow_sidecars(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, invalid: str
+) -> None:
+    root, info = _pillow_record_runtime(tmp_path, monkeypatch)
+    sidecar = root / "pillow.libs/libtiff-fixture.so.6.2.0"
+    if invalid == "missing":
+        sidecar.unlink()
+    elif invalid == "modified":
+        sidecar.write_bytes(b"changed after installation")
+    elif invalid == "traversal":
+        (root / "outside.so").write_bytes(b"outside")
+        with (info / "RECORD").open("a", encoding="utf-8") as stream:
+            stream.write("pillow.libs/../outside.so,,7\n")
+    else:
+        record = info / "RECORD"
+        rows = record.read_text(encoding="utf-8").splitlines()
+        if invalid == "unhashed":
+            fields = rows[1].split(",")
+            rows[1] = f"{fields[0]},,{fields[2]}"
+        else:
+            rows.append(rows[1])
+        record.write_text("\n".join(rows) + "\n", encoding="utf-8")
+    with pytest.raises(windows_worker.SandboxUnavailableError):
+        windows_worker._rendering_runtime_manifest()
 
 
 def test_render_runtime_assets_resolve_from_copied_project_root(

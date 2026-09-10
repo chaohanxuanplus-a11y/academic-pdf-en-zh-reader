@@ -147,6 +147,38 @@ def _inventory_errors(inventory: dict[str, Any]) -> list[str]:
     return errors
 
 
+def _compatible_runtime_errors(relative_path: str, body: str) -> list[str]:
+    errors = []
+    scripts = _run_scripts(body)
+    build = (
+        "python scripts/build_compatible_python.py "
+        "--output-dir .tools/compatible-python"
+    )
+    sync = (
+        'uv sync --frozen --all-groups --python ".tools/compatible-python/python.exe"'
+    )
+    if scripts.count(build) != 1 or scripts.count(sync) != 1:
+        errors.append(
+            f"{relative_path}: Windows must build and select the pinned project runtime"
+        )
+    elif scripts.index(build) > scripts.index(sync):
+        errors.append(
+            f"{relative_path}: compatible runtime must be built before synchronization"
+        )
+    if 'PYTHONDONTWRITEBYTECODE: "1"' not in body:
+        errors.append(
+            f"{relative_path}: tested runtime closure must disable bytecode writes"
+        )
+    for script in scripts:
+        if script.startswith("uv run ") and not script.startswith(
+            'uv run --python ".tools/compatible-python/python.exe" --frozen '
+        ):
+            errors.append(
+                f"{relative_path}: Windows tests must select the compatible runtime"
+            )
+    return errors
+
+
 def validate_workflow_text(
     relative_path: str,
     text: str,
@@ -221,6 +253,15 @@ def validate_workflow_text(
             errors.append(f"{relative_path}: remote pipe-to-shell is forbidden")
 
     if relative_path.endswith("ci.yml"):
+        windows = re.search(
+            r"(?ms)^  windows-runtime:\s*\n(?P<body>.*?)(?=^  [A-Za-z0-9_-]+:\s*\n|\Z)",
+            text,
+        )
+        errors.extend(
+            _compatible_runtime_errors(
+                relative_path, windows.group("body") if windows else ""
+            )
+        )
         current_gate = "check_release_readiness.py --mode current"
         if current_gate not in text:
             errors.append(f"{relative_path}: CI must use the current readiness mode")
@@ -304,16 +345,18 @@ def validate_workflow_text(
         else:
             windows_body = windows_match.group("body")
             windows_scripts = _run_scripts(windows_body)
+            errors.extend(_compatible_runtime_errors(relative_path, windows_body))
             if not re.search(r"(?m)^    runs-on: windows-2025\s*$", windows_body):
                 errors.append(
                     f"{relative_path}: Windows production gate must use windows-2025"
                 )
             if 'python-version: "3.12.10"' not in windows_body:
                 errors.append(
-                    f"{relative_path}: Windows production gate must pin CPython 3.12.10"
+                    f"{relative_path}: Windows production gate must pin "
+                    "the CPython 3.12.10 bootstrap"
                 )
             probe_command = (
-                'uv run --python "$env:pythonLocation\\python.exe" --frozen '
+                'uv run --python ".tools/compatible-python/python.exe" --frozen '
                 "python scripts/probe_worker_sandbox.py"
             )
             if probe_command not in windows_scripts:
@@ -322,7 +365,8 @@ def validate_workflow_text(
                     "scripts/probe_worker_sandbox.py"
                 )
             finish_command = (
-                'uv run --python "$env:pythonLocation\\python.exe" --frozen pytest -q '
+                'uv run --python ".tools/compatible-python/python.exe" '
+                "--frozen pytest -q "
                 "tests/security/test_finish_worker_boundary.py::"
                 "test_production_finish_completes_render_and_qa_in_lpac"
             )
@@ -330,6 +374,32 @@ def validate_workflow_text(
                 errors.append(
                     f"{relative_path}: Windows production gate must directly run the "
                     "production finish LPAC test"
+                )
+            package_command = (
+                "python scripts/package_python_runtime.py "
+                "--runtime-dir .tools/compatible-python "
+                "--output-dir dist/python-runtime"
+            )
+            if windows_scripts.count(package_command) != 1:
+                errors.append(
+                    f"{relative_path}: release must package the tested runtime"
+                )
+            elif finish_command in windows_scripts and windows_scripts.index(
+                package_command
+            ) < windows_scripts.index(finish_command):
+                errors.append(
+                    f"{relative_path}: runtime packaging must follow "
+                    "the LPAC finish test"
+                )
+            upload_fields = (
+                "name: tested-windows-python-runtime\n"
+                "          path: dist/python-runtime/\n"
+                "          if-no-files-found: error"
+            )
+            if upload_fields not in windows_body:
+                errors.append(
+                    f"{relative_path}: tested runtime upload must be "
+                    "exact and fail closed"
                 )
             trusted_outputs = (
                 "lpac-probe-outcome: ${{ steps.lpac-probe.outcome }}",
@@ -386,6 +456,35 @@ def validate_workflow_text(
             build_body = ""
         else:
             build_body = build_match.group("body")
+            download_fields = (
+                "name: tested-windows-python-runtime\n"
+                "          path: dist/release/\n"
+                "          digest-mismatch: error"
+            )
+            if (
+                build_body.count("actions/download-artifact@") != 1
+                or download_fields not in build_body
+            ):
+                errors.append(
+                    f"{relative_path}: runtime download must be exact and fail closed"
+                )
+            if re.search(
+                r"(?m)^\s+(run-id|github-token|artifact-ids|pattern):", build_body
+            ):
+                errors.append(
+                    f"{relative_path}: runtime download must use "
+                    "the current workflow run"
+                )
+            for required_asset in (
+                "academic-pdf-en-zh-reader-cpython-3.12.14-win-amd64.zip",
+                "runtime-artifact.json",
+                "runtime.spdx.json",
+            ):
+                if required_asset not in build_body:
+                    errors.append(
+                        f"{relative_path}: runtime release asset is missing: "
+                        f"{required_asset}"
+                    )
             if not re.search(
                 r"(?m)^    needs: windows-2025-production-gate\s*$", build_body
             ):
@@ -525,8 +624,9 @@ def validate(root: Path) -> tuple[str, ...]:
         ".github/workflows/ci.yml": (
             "actions/setup-python@",
             "uv sync --frozen --all-groups",
-            'uv sync --frozen --all-groups --python "$env:pythonLocation\\python.exe"',
-            'uv run --python "$env:pythonLocation\\python.exe" --frozen pytest -q',
+            "uv sync --frozen --all-groups "
+            '--python ".tools/compatible-python/python.exe"',
+            'uv run --python ".tools/compatible-python/python.exe" --frozen pytest -q',
             "test_worker_uses_restricted_token_and_enforced_job_limits",
             "python scripts/probe_worker_sandbox.py",
             "pytest -q",

@@ -37,6 +37,7 @@ COMMON_PATHS = (
     "compliance/evidence/public",
     "compliance/external-tools.json",
     "compliance/project-identity.json",
+    "compliance/python-runtime.json",
     "compliance/release-status.json",
     "pyproject.toml",
     "references",
@@ -45,6 +46,8 @@ COMMON_PATHS = (
 )
 RUNTIME_SCRIPTS = (
     "scripts/agent_artifacts.py",
+    "scripts/build_compatible_python.py",
+    "scripts/package_python_runtime.py",
     "scripts/compose_pdf.py",
     "scripts/corrections.py",
     "scripts/deliver.py",

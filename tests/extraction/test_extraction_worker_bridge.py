@@ -52,6 +52,22 @@ def _normalization_handoff() -> dict[str, object]:
     }
 
 
+def _mock_lpac_token(monkeypatch: pytest.MonkeyPatch) -> None:
+    from academic_pdf_en_zh_reader.security import windows_worker
+
+    monkeypatch.setattr(
+        windows_worker, "_current_process_security", lambda: (True, [], True, 0)
+    )
+    monkeypatch.setattr(
+        windows_worker, "_current_process_lpac_status", lambda: (True, True)
+    )
+    monkeypatch.setattr(
+        windows_worker,
+        "_open_current_token",
+        lambda *_args: pytest.fail("unit test must not query the host Windows token"),
+    )
+
+
 def test_extraction_request_has_one_exact_production_shape() -> None:
     limits = WorkerLimits(max_protocol_bytes=4096)
     request = _request()
@@ -234,6 +250,20 @@ def test_restricted_test_adapter_refuses_extraction_before_parser_import(
     }
 
 
+def test_extraction_rejects_a_zero_capability_token_that_is_not_lpac(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from academic_pdf_en_zh_reader.security import windows_worker
+
+    _mock_lpac_token(monkeypatch)
+    monkeypatch.setattr(
+        windows_worker, "_current_process_lpac_status", lambda: (False, True)
+    )
+    response = windows_worker._run_extraction_request(_request(), WorkerLimits())
+    assert response.status == "error"
+    assert response.error["code"] == "SANDBOX_CONTRACT_UNVERIFIED"
+
+
 def test_child_rejects_normalized_input_over_its_byte_ceiling(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -242,11 +272,7 @@ def test_child_rejects_normalized_input_over_its_byte_ceiling(
 
     input_path = tmp_path / "input.pdf"
     input_path.write_bytes(b"x" * 123)
-    monkeypatch.setattr(
-        windows_worker,
-        "_current_process_security",
-        lambda: (True, [], True, 0),
-    )
+    _mock_lpac_token(monkeypatch)
     monkeypatch.setattr(
         windows_worker,
         "_resolve_prevalidated_appcontainer_path",
@@ -269,11 +295,7 @@ def test_scanned_ocr_rejection_crosses_worker_boundary_with_stable_code(
 
     input_path = tmp_path / "input.pdf"
     input_path.write_bytes(b"x" * 123)
-    monkeypatch.setattr(
-        windows_worker,
-        "_current_process_security",
-        lambda: (True, [], True, 0),
-    )
+    _mock_lpac_token(monkeypatch)
     monkeypatch.setattr(
         windows_worker,
         "_resolve_prevalidated_appcontainer_path",
@@ -314,11 +336,7 @@ def test_memory_exhaustion_crosses_worker_boundary_with_stable_limit_code(
 
     input_path = tmp_path / "input.pdf"
     input_path.write_bytes(b"x" * 123)
-    monkeypatch.setattr(
-        windows_worker,
-        "_current_process_security",
-        lambda: (True, [], True, 0),
-    )
+    _mock_lpac_token(monkeypatch)
     monkeypatch.setattr(
         windows_worker,
         "_resolve_prevalidated_appcontainer_path",

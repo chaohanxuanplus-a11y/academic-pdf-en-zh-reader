@@ -13,6 +13,7 @@ path = [
   "compliance/evidence/public/brand-use-declaration-20260910.md",
   "compliance/github-actions.json",
   "compliance/project-identity.json",
+  "compliance/python-runtime.json",
   "compliance/release-status.json",
   "docs/superpowers/plans/2026-08-27-academic-pdf-bilingual-reader-implementation-plan.md",
   "docs/superpowers/specs/2026-08-27-academic-pdf-bilingual-reader-skill-design.md",

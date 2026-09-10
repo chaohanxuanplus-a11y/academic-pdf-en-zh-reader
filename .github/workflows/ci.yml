@@ -42,6 +42,8 @@ jobs:
 
   windows-runtime:
     runs-on: windows-2025
+    env:
+      PYTHONDONTWRITEBYTECODE: "1"
     permissions:
       contents: read
     steps:
@@ -55,14 +57,16 @@ jobs:
         with:
           version: "0.12.6"
           enable-cache: false
+      - name: Build the pinned project-compatible CPython runtime
+        run: python scripts/build_compatible_python.py --output-dir .tools/compatible-python
       - name: Synchronize the frozen environment
-        run: uv sync --frozen --all-groups --python "$env:pythonLocation\python.exe"
+        run: uv sync --frozen --all-groups --python ".tools/compatible-python/python.exe"
       - name: Smoke test the restricted Windows worker
-        run: uv run --python "$env:pythonLocation\python.exe" --frozen pytest -q tests/security/test_windows_worker_limits.py::test_worker_uses_restricted_token_and_enforced_job_limits
+        run: uv run --python ".tools/compatible-python/python.exe" --frozen pytest -q tests/security/test_windows_worker_limits.py::test_worker_uses_restricted_token_and_enforced_job_limits
       - name: Verify the production AppContainer security probe
-        run: uv run --python "$env:pythonLocation\python.exe" --frozen python scripts/probe_worker_sandbox.py
+        run: uv run --python ".tools/compatible-python/python.exe" --frozen python scripts/probe_worker_sandbox.py
       - name: Test the Windows worker and production pipeline
-        run: uv run --python "$env:pythonLocation\python.exe" --frozen pytest -q
+        run: uv run --python ".tools/compatible-python/python.exe" --frozen pytest -q
 
   reuse:
     runs-on: ubuntu-24.04

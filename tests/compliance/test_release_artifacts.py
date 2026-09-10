@@ -937,6 +937,13 @@ def test_ready_tree_builds_repeatable_notice_complete_candidates(
                 archive.read(name) for name in archive.namelist()
             )
             assert "academic-pdf-en-zh-reader/REUSE.toml" in names
+            assert "academic-pdf-en-zh-reader/compliance/python-runtime.json" in names
+            assert (
+                "academic-pdf-en-zh-reader/scripts/build_compatible_python.py" in names
+            )
+            assert (
+                "academic-pdf-en-zh-reader/scripts/package_python_runtime.py" in names
+            )
             assert (
                 "academic-pdf-en-zh-reader/assets/fonts/Synthetic-Regular.ttf" in names
             )
