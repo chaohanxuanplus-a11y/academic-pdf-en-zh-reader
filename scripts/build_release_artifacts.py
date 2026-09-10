@@ -7,6 +7,7 @@ import argparse
 import hashlib
 import json
 import os
+import subprocess
 import tempfile
 import zipfile
 from pathlib import Path
@@ -85,7 +86,48 @@ def _sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
-def _collect(root: Path, entries: tuple[str, ...]) -> tuple[Path, ...]:
+def _tracked_files(root: Path, entries: tuple[str, ...]) -> dict[str, str]:
+    """Snapshot committed members; staged replacements are not release inputs."""
+
+    def git(*arguments: str) -> bytes:
+        try:
+            return subprocess.check_output(
+                ["git", "-C", str(root), *arguments],
+                stderr=subprocess.PIPE,
+                timeout=30,
+            )
+        except (
+            OSError,
+            subprocess.CalledProcessError,
+            subprocess.TimeoutExpired,
+        ) as exc:
+            raise ValueError("release requires a readable committed Git tree") from exc
+
+    if Path(os.fsdecode(git("rev-parse", "--show-toplevel")).strip()).resolve() != root:
+        raise ValueError("release root must be the Git worktree root")
+    head = git("rev-parse", "HEAD").decode("ascii").strip()
+    if git("diff", "--cached", "--name-only", "-z", head, "--", *entries):
+        raise ValueError("release members have staged changes from HEAD")
+    tracked: dict[str, str] = {}
+    for record in git("ls-tree", "-r", "-z", "--full-tree", head).split(b"\0"):
+        if not record:
+            continue
+        metadata, name = record.split(b"\t", 1)
+        relative = os.fsdecode(name)
+        if not any(
+            relative == entry or relative.startswith(entry + "/") for entry in entries
+        ):
+            continue
+        mode, kind, object_id = metadata.decode("ascii").split()
+        if mode not in {"100644", "100755"} or kind != "blob":
+            raise ValueError(f"release Git member must be a regular file: {relative}")
+        tracked[relative] = object_id
+    return tracked
+
+
+def _collect(
+    root: Path, entries: tuple[str, ...], tracked: dict[str, str]
+) -> tuple[Path, ...]:
     files: set[Path] = set()
     for entry in entries:
         path = root / entry
@@ -93,6 +135,8 @@ def _collect(root: Path, entries: tuple[str, ...]) -> tuple[Path, ...]:
             raise ValueError(f"required release member is missing: {entry}")
         if path.is_symlink():
             raise ValueError(f"release members must not be symlinks: {entry}")
+        if not any(name == entry or name.startswith(entry + "/") for name in tracked):
+            raise ValueError(f"required release member is not committed: {entry}")
         if path.is_file():
             files.add(path)
             continue
@@ -102,8 +146,24 @@ def _collect(root: Path, entries: tuple[str, ...]) -> tuple[Path, ...]:
                     "release directories must not contain symlinks: "
                     f"{child.relative_to(root).as_posix()}"
                 )
-            if child.is_file():
+            if child.is_file() and child.relative_to(root).as_posix() in tracked:
                 files.add(child)
+    expected = {
+        root / name
+        for name in tracked
+        if any(name == entry or name.startswith(entry + "/") for entry in entries)
+    }
+    if missing := expected - files:
+        relative = min(path.relative_to(root).as_posix() for path in missing)
+        raise ValueError(f"committed release member is missing: {relative}")
+    for path in files:
+        relative = path.relative_to(root).as_posix()
+        content = path.read_bytes()
+        object_id = tracked[relative]
+        algorithm = "sha1" if len(object_id) == 40 else "sha256"
+        digest = hashlib.new(algorithm, f"blob {len(content)}\0".encode() + content)
+        if digest.hexdigest() != object_id:
+            raise ValueError(f"release member differs from committed HEAD: {relative}")
     return tuple(sorted(files, key=lambda item: item.relative_to(root).as_posix()))
 
 
@@ -117,14 +177,16 @@ def _validate_members(root: Path, files: tuple[Path, ...]) -> None:
             raise ValueError(f"development release marker found in: {relative}")
 
 
-def _validate_assets(root: Path) -> tuple[dict[str, object], ...]:
+def _validate_assets(
+    root: Path, tracked: dict[str, str]
+) -> tuple[dict[str, object], ...]:
     font_manifest = json.loads(
         (root / "assets" / "font-manifest.json").read_text(encoding="utf-8")
     )
     font_records = {item["path"]: item for item in font_manifest["fonts"]}
     notices = (root / "THIRD_PARTY_NOTICES.md").read_text(encoding="utf-8")
     records: list[dict[str, object]] = []
-    for path in _collect(root, ("assets",)):
+    for path in _collect(root, ("assets",), tracked):
         relative = path.relative_to(root).as_posix()
         digest = _sha256(path)
         record: dict[str, object] = {
@@ -180,13 +242,16 @@ def build(root: Path, output_dir: Path) -> tuple[Path, ...]:
     if not readiness.ok:
         raise ValueError("release readiness is blocked: " + "; ".join(readiness.errors))
 
-    source_files = _collect(root, COMMON_PATHS + RUNTIME_SCRIPTS)
-    skill_files = _collect(
+    tracked = _tracked_files(
         root, COMMON_PATHS + RUNTIME_SCRIPTS + ("SKILL.md", "agents")
+    )
+    source_files = _collect(root, COMMON_PATHS + RUNTIME_SCRIPTS, tracked)
+    skill_files = _collect(
+        root, COMMON_PATHS + RUNTIME_SCRIPTS + ("SKILL.md", "agents"), tracked
     )
     _validate_members(root, source_files)
     _validate_members(root, skill_files)
-    asset_records = _validate_assets(root)
+    asset_records = _validate_assets(root, tracked)
 
     output_dir.parent.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(

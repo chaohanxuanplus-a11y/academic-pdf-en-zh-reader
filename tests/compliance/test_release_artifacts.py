@@ -12,6 +12,7 @@ from pathlib import Path, PurePosixPath
 
 import pytest
 
+from scripts import build_release_artifacts as artifact_module
 from scripts import check_release_readiness as readiness_module
 from scripts.build_release_artifacts import COMMON_PATHS, RUNTIME_SCRIPTS, build
 from scripts.check_release_readiness import (
@@ -52,6 +53,26 @@ def _write(path: Path, content: str | bytes = "test\n") -> None:
         path.write_bytes(content)
     else:
         path.write_text(content, encoding="utf-8", newline="\n")
+
+
+def _commit_synthetic_tree(root: Path) -> None:
+    arguments = ["git", "-C", str(root), "-c", "core.autocrlf=false"]
+    subprocess.run([*arguments, "add", "--all"], check=True)
+    subprocess.run(
+        [
+            *arguments,
+            "-c",
+            "user.name=Synthetic Release Test",
+            "-c",
+            "user.email=release-test@example.invalid",
+            "-c",
+            "commit.gpgsign=false",
+            "commit",
+            "-qm",
+            "Synthetic release fixture",
+        ],
+        check=True,
+    )
 
 
 @pytest.fixture(autouse=True)
@@ -314,6 +335,7 @@ def _synthetic_ready_tree(root: Path) -> None:
         "Apache-2.0\n"
         f"Trademark public use verified by {BRAND_TRADEMARK_REFERENCE}.\n",
     )
+    _commit_synthetic_tree(root)
 
 
 def _synthetic_blocked_tree(root: Path) -> None:
@@ -1004,11 +1026,138 @@ def test_package_member_with_development_marker_is_rejected(tmp_path: Path) -> N
         root / "README.md",
         f"[Disclaimer](DISCLAIMER.md)\n{CANONICAL_URL}\nPUBLIC_RELEASE_" + "BLOCKED\n",
     )
+    _commit_synthetic_tree(root)
     output = root / "dist" / "release"
 
     with pytest.raises(ValueError, match="development release marker"):
         build(root, output)
     assert not output.exists()
+
+
+@pytest.mark.parametrize(
+    "relative",
+    (
+        "src/__pycache__/module.cpython-312.pyc",
+        "src/module.pyc",
+        "references/local-notes.txt",
+        "assets/build-diagnostics.txt",
+    ),
+)
+def test_untracked_cache_and_plain_text_never_enter_candidates(
+    tmp_path: Path, relative: str
+) -> None:
+    root = tmp_path / "repository"
+    _synthetic_ready_tree(root)
+    first = build(root, root / "dist" / "first")
+    _write(root / relative, b"synthetic local-only content")
+
+    second = build(root, root / "dist" / "second")
+
+    for archive_path in second[:2]:
+        with zipfile.ZipFile(archive_path) as archive:
+            assert f"academic-pdf-en-zh-reader/{relative}" not in archive.namelist()
+    assert [_hash(path) for path in first] == [_hash(path) for path in second]
+
+
+@pytest.mark.parametrize(
+    "change", ("modified", "staged", "missing", "assume-unchanged")
+)
+def test_committed_member_cannot_be_replaced_or_omitted(
+    tmp_path: Path, change: str
+) -> None:
+    root = tmp_path / "repository"
+    _synthetic_ready_tree(root)
+    member = root / "src/placeholder.txt"
+    if change == "missing":
+        member.unlink()
+        message = "committed release member is missing"
+    else:
+        _write(member, "synthetic replacement\n")
+        if change == "staged":
+            subprocess.run(
+                ["git", "-C", str(root), "add", "src/placeholder.txt"], check=True
+            )
+            message = "staged changes"
+        else:
+            if change == "assume-unchanged":
+                subprocess.run(
+                    [
+                        "git",
+                        "-C",
+                        str(root),
+                        "update-index",
+                        "--assume-unchanged",
+                        "src/placeholder.txt",
+                    ],
+                    check=True,
+                )
+            message = "differs from committed HEAD"
+    output = root / "dist/release"
+    with pytest.raises(ValueError, match=message):
+        build(root, output)
+    assert not output.exists()
+
+
+@pytest.mark.parametrize(
+    ("relative", "content", "message"),
+    (
+        ("references/local.pdf", b"synthetic document", "private or user-document"),
+        (
+            "references/status.txt",
+            b"PUBLIC_RELEASE_" + b"BLOCKED",
+            "development release marker",
+        ),
+        (
+            "assets/fonts/Unreviewed.ttf",
+            b"synthetic font",
+            "font is absent from font-manifest",
+        ),
+    ),
+)
+def test_committed_members_still_enforce_content_and_font_gates(
+    tmp_path: Path, relative: str, content: bytes, message: str
+) -> None:
+    root = tmp_path / "repository"
+    _synthetic_ready_tree(root)
+    _write(root / relative, content)
+    _commit_synthetic_tree(root)
+    output = root / "dist/release"
+    with pytest.raises(ValueError, match=message):
+        build(root, output)
+    assert not output.exists()
+
+
+def test_untracked_symlink_is_still_rejected(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root = tmp_path / "repository"
+    _synthetic_ready_tree(root)
+    member = root / "references/synthetic-link"
+    _write(member)
+    original = Path.is_symlink
+    monkeypatch.setattr(
+        Path, "is_symlink", lambda path: path == member or original(path)
+    )
+    output = root / "dist/release"
+    with pytest.raises(ValueError, match="must not contain symlinks"):
+        build(root, output)
+    assert not output.exists()
+
+
+def test_git_snapshot_timeout_fails_closed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root = tmp_path / "repository"
+    _synthetic_ready_tree(root)
+
+    def timed_out(command, **kwargs):
+        assert kwargs["timeout"] == 30
+        raise subprocess.TimeoutExpired(command, kwargs["timeout"])
+
+    monkeypatch.setattr(artifact_module.subprocess, "check_output", timed_out)
+    with pytest.raises(ValueError, match="readable committed Git tree"):
+        artifact_module._tracked_files(root, COMMON_PATHS)
+    assert not (root / "dist").exists()
 
 
 def test_missing_disclaimer_fails_before_writing_release_artifacts(
