@@ -8,6 +8,7 @@ import gc
 import json
 import os
 import stat
+from contextlib import suppress
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -29,6 +30,9 @@ from academic_pdf_en_zh_reader.security.windows_worker import (
 from academic_pdf_en_zh_reader.security.worker_protocol import (
     ProtocolError,
     WorkerRequest,
+)
+from tests.security.restricted_loader_diagnostics import (
+    emit_restricted_loader_diagnostics,
 )
 
 pytestmark = pytest.mark.skipif(os.name != "nt", reason="Windows-only sandbox")
@@ -81,7 +85,13 @@ def test_worker_uses_restricted_token_and_enforced_job_limits(
     workspace: Path,
     restricted_job_adapter: None,
 ) -> None:
-    result = run_worker(_request("inspect"), workspace)
+    try:
+        result = run_worker(_request("inspect"), workspace)
+    except WorkerExecutionError:
+        # Diagnostics must never replace the original worker failure.
+        with suppress(Exception):
+            emit_restricted_loader_diagnostics()
+        raise
 
     assert result.response.status == "ok"
     assert result.response.result["restricted_token"] is True
