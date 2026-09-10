@@ -3,8 +3,8 @@
 
 # Privacy
 
-This local candidate has passed local acceptance, and public release remains
-blocked. No PDF processing service or telemetry is activated by this repository.
+PDF processing and personal correction storage run locally. No hosted PDF
+processing service or telemetry is activated by this repository.
 Importing the package does not create a correction database. The local correction
 store is created only by an explicit authorized correction or store command.
 
@@ -14,7 +14,7 @@ Skill does not fetch source papers or automatically upload or publish generated
 PDFs. User and content-rights responsibilities are stated separately in the
 [project disclaimer](DISCLAIMER.md).
 
-The candidate privacy contract requires it to:
+The privacy contract requires it to:
 
 - process PDF parsing, layout, rendering, QA, and personal correction storage
   locally;
@@ -40,6 +40,6 @@ Issues, pull requests, tests, screenshots, and release assets must never include
 user papers, non-public research material, correction databases, or unredacted
 logs.
 
-These commitments describe the approved candidate contract, not a release or
-deployment claim. They are enforced by local acceptance tests; the separate
-public-release identity and private-contact gates remain blocked.
+These commitments apply to version `0.1.0` and are covered by acceptance tests.
+They do not replace the applicable Agent runtime and account data controls or
+authorize publishing private papers, model context, or generated translations.

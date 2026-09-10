@@ -80,8 +80,7 @@ at [chx2391898642@126.com](mailto:chx2391898642@126.com). This is the
 maintainer-supplied contact address recorded on 2026-09-10; no test email has
 been sent and delivery has not been independently tested. The address may be
 public, but submitted reports and reporter details must remain private. Public
-issues are not an acceptable substitute. Other release gates remain unresolved,
-so the repository is still not ready for public participation or release.
+issues are not an acceptable substitute.
 
 Under the personal-project policy revised on 2026-09-09, one route may handle
 both conduct and security reports if it supports both purposes. Separate
@@ -144,6 +143,6 @@ Contributor Covenant is stewarded by the Organization for Ethical Source and
 licensed under CC BY-SA 4.0. A copy of the license is available at
 <https://creativecommons.org/licenses/by-sa/4.0/>.
 
-Project modifications clarify the unreleased status, the 2026-09-09
+Project modifications clarify the personal maintainer's scope, the 2026-09-09
 personal-project reporting policy, and limits on independent review while
 preserving the behavioral expectations of version 3.0.

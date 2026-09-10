@@ -354,7 +354,7 @@ def test_blocked_tree_fails_closed_before_writing_release_artifacts(
     assert not output.exists()
 
 
-def test_current_tree_keeps_windows_lpac_production_path_unresolved() -> None:
+def test_current_tree_records_declared_windows_lpac_production_state() -> None:
     status = json.loads(
         (
             Path(__file__).resolve().parents[2] / "compliance" / "release-status.json"
@@ -366,11 +366,21 @@ def test_current_tree_keeps_windows_lpac_production_path_unresolved() -> None:
         if item["id"] == "windows_lpac_production_path_unverified"
     )
 
-    assert blocker == {
-        "id": "windows_lpac_production_path_unverified",
-        "resolved": False,
-        "evidence": None,
-    }
+    if status["state"] == "PUBLIC_RELEASE_READY":
+        assert blocker["resolved"] is True
+        assert isinstance(blocker["evidence"], dict)
+        assert set(blocker["evidence"]) == readiness_module.WINDOWS_LPAC_EVIDENCE_FIELDS
+        assert blocker["evidence"]["conclusion"] == "success"
+        current = assess_release_readiness(
+            Path(__file__).resolve().parents[2], mode="current"
+        )
+        assert current.ok, current.errors
+    else:
+        assert blocker == {
+            "id": "windows_lpac_production_path_unverified",
+            "resolved": False,
+            "evidence": None,
+        }
 
 
 def test_current_mode_follows_declared_ready_state(tmp_path: Path) -> None:

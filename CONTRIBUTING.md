@@ -3,15 +3,15 @@
 
 # Contributing
 
-This repository is still in controlled development and is not ready to accept
-public contributions. The maintainer-supplied private reporting route is
+This is a personally maintained project. Please discuss proposed changes first;
+acceptance and review timing are not guaranteed. The private reporting route is
 documented in `SECURITY.md` and `CODE_OF_CONDUCT.md`. Under the personal-project
 policy revised on 2026-09-09, one
 route may serve both code-of-conduct and security reports; an independent
 alternate contact is not required. The published policy must describe who
 actually receives reports and any limits on independent review or appeal.
 
-When contribution is enabled, every change must:
+Every proposed change must:
 
 1. Stay within the approved design and make the smallest change that satisfies
    a verifiable requirement.
@@ -35,6 +35,5 @@ license, and confirmation that no confidential material or user paper was sent
 to the tool.
 
 The configured report address comes from the maintainer's own confirmation,
-not a placeholder or an upstream contact. Public contribution remains disabled
-while the repository's other release gates remain unresolved. The mailbox does
+not a placeholder or an upstream contact. The mailbox does
 not imply independently tested delivery, fixed response times, or a moderation team.

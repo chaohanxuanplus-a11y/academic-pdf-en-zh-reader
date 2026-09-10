@@ -195,12 +195,21 @@ class RepositoryComplianceTests(unittest.TestCase):
         current = assess_release_readiness(ROOT, mode="current")
         self.assertTrue(current.ok, current.errors)
         windows_lpac = blockers["windows_lpac_production_path_unverified"]
-        self.assertFalse(windows_lpac["resolved"])
-        self.assertIsNone(windows_lpac["evidence"])
-        self.assertIn(
-            "windows_lpac_production_path_unverified",
-            (ROOT / "README.md").read_text(encoding="utf-8"),
-        )
+        if status["state"] == "PUBLIC_RELEASE_READY":
+            self.assertTrue(windows_lpac["resolved"])
+            self.assertIsInstance(windows_lpac["evidence"], dict)
+            self.assertEqual("success", windows_lpac["evidence"]["conclusion"])
+            self.assertEqual(
+                {"conclusion", "head_sha", "job", "run_url", "verified_on", "workflow"},
+                set(windows_lpac["evidence"]),
+            )
+        else:
+            self.assertFalse(windows_lpac["resolved"])
+            self.assertIsNone(windows_lpac["evidence"])
+            self.assertIn(
+                "windows_lpac_production_path_unverified",
+                (ROOT / "README.md").read_text(encoding="utf-8"),
+            )
         self.assertNotIn("example.com", json.dumps(status).lower())
 
     def test_personal_brand_authorization_remains_output_only(self) -> None:

@@ -5,8 +5,8 @@
 
 ## Supported versions
 
-There are currently no supported public versions. The project is under local
-development and must not be published as a production-ready Skill.
+Version `0.1.0` receives best-effort security maintenance from the personal
+maintainer. No fixed response time or long-term support period is guaranteed.
 
 ## Reporting a vulnerability
 
@@ -28,6 +28,9 @@ Public issues are not an acceptable channel for vulnerabilities, user papers,
 personal information, secrets, or unredacted logs. No placeholder email or an
 upstream project's contact address may be presented as this project's channel.
 
-Before a public release, this file must be updated with supported versions, the
-coordinated disclosure expectations, and the fix publication process. The
-configured mailbox does not clear the remaining production safety gate.
+Please coordinate disclosure privately with the maintainer before publishing
+exploit details. Include a minimal synthetic reproduction and affected version,
+without papers, credentials, or personal data. Confirmed fixes will be tested
+and published in a new tagged release with an appropriate security note;
+disclosure timing should account for user safety and reporter confidentiality.
+The reporting channel does not replace the production safety gates.

@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "state": "PUBLIC_RELEASE_BLOCKED",
+  "state": "PUBLIC_RELEASE_READY",
   "blockers": [
     {
       "id": "maintainer_identity_unverified",
@@ -38,8 +38,15 @@
     },
     {
       "id": "windows_lpac_production_path_unverified",
-      "resolved": false,
-      "evidence": null
+      "resolved": true,
+      "evidence": {
+        "conclusion": "success",
+        "head_sha": "26f3806ec24bb1d3abfde27fac1193c44b06c6d3",
+        "job": "windows-2025-production-gate",
+        "run_url": "https://github.com/chaohanxuanplus-a11y/academic-pdf-en-zh-reader/actions/runs/34439007669",
+        "verified_on": "2026-09-10",
+        "workflow": ".github/workflows/release.yml"
+      }
     }
   ]
 }

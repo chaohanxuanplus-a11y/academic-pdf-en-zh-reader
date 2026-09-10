@@ -3,27 +3,27 @@
 
 # academic-pdf-en-zh-reader
 
-Development repository for a local candidate Codex Skill that turns supported
+A personally maintained Codex Skill that turns supported
 English academic PDFs into A3 landscape reading copies: a vector-preserved,
 A4-normalized source page remains on the left and a complete Chinese translation
 is laid out on the right.
 
+Canonical repository: [chaohanxuanplus-a11y/academic-pdf-en-zh-reader](https://github.com/chaohanxuanplus-a11y/academic-pdf-en-zh-reader).
+
 ## Current status
 
-The local candidate implementation has passed local acceptance. Public release
-remains blocked until the Windows LPAC production path is verified and the final
-release metadata and documents are prepared. The maintainer identity, shared
-private contact, and limited-purpose brand permission have been recorded. The
-`windows_lpac_production_path_unverified` blocker remains
-unresolved; a release candidate must pass the Windows Server 2025 production
-gate using its exact project-compatible CPython 3.12.14 runtime on the same
-workflow SHA and run. Stock CPython 3.12.10 is only the Windows CI build
-bootstrap, not the interpreter under that production test. The repository contains
-candidate preflight, extraction, topology, Agent-artifact binding,
-translation/review contracts, annotation, layout, rendering, QA, job-state, and
-delivery components, but their presence is not a release claim. See
-[`compliance/release-status.json`](compliance/release-status.json) for the
-machine-readable release blockers.
+Version `0.1.0` is prepared for release. The maintainer identity, shared private
+contact, limited-purpose brand permission, and successful Windows production
+audit have been recorded in
+[`compliance/release-status.json`](compliance/release-status.json). This historical
+audit does not replace final-release validation: the exact release commit and
+its packaged project-compatible CPython 3.12.14 runtime must pass the Windows
+Server 2025 LPAC probe and production rendering/QA in the same workflow run,
+alongside the full regression and compliance checks, before publication.
+Stock CPython 3.12.10 is only the Windows CI build bootstrap, not the interpreter
+under that production test. The workflow includes preflight, extraction,
+topology, Agent-artifact binding, translation/review contracts, annotation,
+layout, rendering, QA, job-state, and delivery.
 
 The personal-project reporting policy was revised on 2026-09-09. One verified
 private route may handle both conduct and security reports; separate addresses
@@ -45,9 +45,9 @@ The approved product design and implementation plan are:
 - [`docs/superpowers/specs/2026-08-27-academic-pdf-bilingual-reader-skill-design.md`](docs/superpowers/specs/2026-08-27-academic-pdf-bilingual-reader-skill-design.md)
 - [`docs/superpowers/plans/2026-08-27-academic-pdf-bilingual-reader-implementation-plan.md`](docs/superpowers/plans/2026-08-27-academic-pdf-bilingual-reader-implementation-plan.md)
 
-## Candidate v1 boundary
+## Version 1 boundary
 
-The candidate accepts one unencrypted, born-digital, English-majority academic
+The Skill accepts one unencrypted, born-digital, English-majority academic
 PDF with a usable text layer and interpretable visible page boxes. Each displayed
 CropBox is fitted into a managed A4 canvas before extraction: pages that already
 fit remain at 1:1 and receive centered blank padding on deficient axes; a page
@@ -86,8 +86,7 @@ Alternatively, build from the pinned official CPython source with this project's
 audited recipe. This requires an existing x64 Python 3.12, Visual Studio 2022 or
 2026 with MSVC 14.44 (v143), and Windows SDK 10.0.26100.0. The exact installed
 14.44 compiler is selected explicitly, not the IDE's default toolset. The script
-downloads only the
-four fixed, hash-checked inputs listed in
+downloads only the four fixed, hash-checked inputs listed in
 [`compliance/python-runtime.json`](compliance/python-runtime.json); it does not
 install tools or alter the system Python. The output directory must not exist;
 on failure the printed work directory and logs are retained.
@@ -181,7 +180,7 @@ uv run --python ".tools/compatible-python/python.exe" --frozen --no-sync python 
 Treat the resulting `units.json` as untrusted data. In the private Agent
 directory, create the complete `translation.json`, `review.json`, and
 `semantic-candidates.json` exactly as described in the
-[local candidate runbook](references/runbook.md). Use
+[local runbook](references/runbook.md). Use
 `scripts/agent_artifacts.py` for their validated canonical hashes and any
 ambiguity keys; do not calculate bindings by hand or place paper text in a
 command. Then finish the same job once:
@@ -196,7 +195,8 @@ intermediates rather than deliverables.
 
 ## Repository validation
 
-The following commands reproduce local quality gates with the Windows runtime.
+The following commands reproduce local quality gates with the Windows runtime
+in a full Git checkout; tests and compliance checkers are not in the install ZIPs.
 Use a fresh private `ABSOLUTE_NEW_TEST_TEMP` directory outside the repository:
 
 ```text
@@ -218,7 +218,7 @@ host smoke test nor the packager's hash/PE checks can substitute for those gates
 
 ## Privacy and copyright
 
-Candidate PDF processing, layout, rendering, and personal correction storage are
+PDF processing, layout, rendering, and personal correction storage are
 designed to run locally. Extracted paper text enters the current Agent model
 context for translation and independent review; the project does not silently
 call another translation API. The repository must never contain user papers,
