@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import ctypes
+import gc
 import json
 import os
 import stat
@@ -1253,13 +1254,17 @@ def test_exceptional_worker_paths_have_zero_parent_handle_growth(
     expected_error: type[Exception],
 ) -> None:
     run_worker(_request("inspect"), workspace)
+    # This count covers the entire pytest process, not just worker-owned handles.
+    # Settle finalizers first; unrelated handles may close, but no growth is allowed.
+    gc.collect()
     before = windows_worker._current_process_handle_count()
 
     with pytest.raises(expected_error):
         run_worker(worker_request, workspace, limits=limits)
 
+    gc.collect()
     after = windows_worker._current_process_handle_count()
-    assert after == before
+    assert after <= before, f"parent handle count grew: {before} -> {after}"
 
 
 def test_repeated_output_limit_failures_do_not_accumulate_handles(
@@ -1267,12 +1272,79 @@ def test_repeated_output_limit_failures_do_not_accumulate_handles(
     restricted_job_adapter: None,
 ) -> None:
     run_worker(_request("inspect"), workspace)
+    gc.collect()
     before = windows_worker._current_process_handle_count()
 
     for _index in range(5):
         with pytest.raises(WorkerOutputLimitError):
             run_worker(_request("oversize_output"), workspace)
-        assert windows_worker._current_process_handle_count() == before
+        gc.collect()
+        after = windows_worker._current_process_handle_count()
+        assert after <= before, f"parent handle count grew: {before} -> {after}"
+        # An earlier drop must not provide a cushion for a later leaked handle.
+        before = after
+
+
+@pytest.mark.parametrize("after", [289, 291, 292])
+def test_exceptional_handle_growth_assertion_rejects_even_one_new_handle(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    after: int,
+) -> None:
+    counts = iter((291, after))
+    limits = WorkerLimits(wall_time_seconds=0.2, cpu_time_seconds=5.0)
+    request = _request("sleep", seconds=5)
+
+    def fake_worker(worker_request, _workspace, **kwargs):
+        if worker_request.parameters["case"] == "inspect":
+            return None
+        assert worker_request == request
+        assert kwargs["limits"] is limits
+        raise WorkerTimeoutError("expected timeout")
+
+    monkeypatch.setitem(globals(), "run_worker", fake_worker)
+    monkeypatch.setattr(
+        windows_worker, "_current_process_handle_count", lambda: next(counts)
+    )
+    arguments = (tmp_path, None, request, limits, WorkerTimeoutError)
+    if after > 291:
+        with pytest.raises(
+            AssertionError, match="parent handle count grew: 291 -> 292"
+        ):
+            test_exceptional_worker_paths_have_zero_parent_handle_growth(*arguments)
+    else:
+        test_exceptional_worker_paths_have_zero_parent_handle_growth(*arguments)
+
+
+@pytest.mark.parametrize(
+    "observations",
+    [(289,) * 5, (291,) * 5, (291, 291, 292, 291, 291), (289, 290, 290, 290, 290)],
+)
+def test_repeated_handle_growth_assertion_rejects_a_transient_one_handle_increase(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    observations: tuple[int, ...],
+) -> None:
+    counts = iter((291, *observations))
+
+    def fake_worker(worker_request, _workspace, **_kwargs):
+        if worker_request.parameters["case"] == "inspect":
+            return None
+        assert worker_request.parameters["case"] == "oversize_output"
+        raise WorkerOutputLimitError("expected oversized output")
+
+    monkeypatch.setitem(globals(), "run_worker", fake_worker)
+    monkeypatch.setattr(
+        windows_worker, "_current_process_handle_count", lambda: next(counts)
+    )
+    samples = (291, *observations)
+    if any(right > left for left, right in zip(samples, samples[1:], strict=False)):
+        with pytest.raises(AssertionError, match="parent handle count grew"):
+            test_repeated_output_limit_failures_do_not_accumulate_handles(
+                tmp_path, None
+            )
+    else:
+        test_repeated_output_limit_failures_do_not_accumulate_handles(tmp_path, None)
 
 
 @pytest.mark.parametrize(
