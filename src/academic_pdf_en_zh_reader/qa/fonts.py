@@ -245,19 +245,7 @@ def validate_draw_run_fonts(
             )
         # Source content can legitimately use the same public font. Composition
         # appends the frozen overlay, so the exact overlay sequence is the suffix.
-        if plan_page.get("page_kind") == "disclaimer":
-            expected_text = "".join(str(run["text"]) for run in plan_page["draw_runs"])
-            try:
-                actual_text = page.extract_text()
-            except Exception as exc:
-                raise FontQaError("FONT_DRAW_BINDING_INVALID") from exc
-            if (
-                observed != planned
-                or not expected_text
-                or "".join(actual_text.split()) != "".join(expected_text.split())
-            ):
-                raise FontQaError("FONT_DRAW_BINDING_INVALID")
-        elif plan_page.get("brand_block") is not None:
+        if plan_page.get("brand_block") is not None:
             expected_brand = "".join(
                 str(run["text"])
                 for run in plan_page["draw_runs"]

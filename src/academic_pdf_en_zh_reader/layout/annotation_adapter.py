@@ -304,7 +304,9 @@ def make_annotation_layout_trial(
             ) from exc
         return LayoutTrialResult(
             True,
-            int(layout["solver_trace"]["continuation_page_count"]),  # type: ignore[index]
+            int(layout["solver_trace"]["continuation_page_count"]),
+            int(layout["solver_trace"]["chinese_page_count"]),
+            int(layout["solver_trace"]["body_page_budget"]),
         )
 
     return trial

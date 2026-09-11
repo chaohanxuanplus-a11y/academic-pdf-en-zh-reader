@@ -331,3 +331,40 @@ def test_ambiguity_key_rejects_relative_output_path(tmp_path: Path) -> None:
     assert completed.stdout == ""
     assert completed.stderr == "PATH_FORBIDDEN\n"
     assert not output.exists()
+
+
+def test_compact_packets_and_assembly_commands(tmp_path):
+    from academic_pdf_en_zh_reader.schema.validate import validate_artifact
+    from tests.orchestration.test_agent_packets import inputs
+
+    units, draft, review = inputs()
+    for name, value in (("units", units), ("draft", draft), ("review-record", review)):
+        (tmp_path / f"{name}.json").write_text(
+            json.dumps(value, ensure_ascii=False), encoding="utf-8"
+        )
+    packet_path = tmp_path / "packets.json"
+    result = _run(
+        "packets", "--units", tmp_path / "units.json", "--output", packet_path
+    )
+    assert result.returncode == 0, result.stderr
+    packets = json.loads(packet_path.read_text(encoding="utf-8"))
+    assert packets["units_hash"] == sha256_canonical(units)
+    out = tmp_path / "assembled"
+    result = _run(
+        "assemble",
+        "--units",
+        tmp_path / "units.json",
+        "--draft",
+        tmp_path / "draft.json",
+        "--review-record",
+        tmp_path / "review-record.json",
+        "--translator-id",
+        "translator-agent",
+        "--output-dir",
+        out,
+    )
+    assert result.returncode == 0, result.stderr
+    for name in ("translation", "review", "semantic-candidates"):
+        validate_artifact(
+            name, json.loads((out / f"{name}.json").read_text(encoding="utf-8"))
+        )

@@ -33,7 +33,7 @@ def test_skill_metadata_is_discriminating_and_discoverable() -> None:
 
     assert metadata["name"] == "academic-pdf-en-zh-reader"
     assert all(term in description for term in ("a4", "a3", "academic", "pdf"))
-    assert "ordinary text" in description
+    assert "born-digital" in description
 
     agent_yaml = (ROOT / "agents" / "openai.yaml").read_text(encoding="utf-8")
     assert "allow_implicit_invocation: true" in agent_yaml
@@ -54,8 +54,6 @@ def test_skill_entrypoint_is_short_and_routes_to_maintained_references() -> None
         "references/runbook.md",
         "DISCLAIMER.md",
         "PRIVACY.md",
-        "SECURITY.md",
-        "compliance/release-status.json",
     }
 
     assert required.issubset(set(links.values()))
@@ -89,70 +87,20 @@ def test_repository_stage_wrappers_exist_without_a_broken_package_entrypoint() -
     assert (ROOT / "scripts" / "solve_layout.py").is_file()
 
 
-def test_skill_routes_only_the_two_production_front_doors() -> None:
-    content = (ROOT / "SKILL.md").read_text(encoding="utf-8")
-    lowered = content.casefold()
-
-    assert "scripts/prepare_job.py" in content
-    assert "scripts/finish_job.py" in content
-    assert "whole `units.json`" in lowered
-    assert "batch" in lowered and "stop" in lowered
-    assert all(
-        wrapper in content
-        for wrapper in (
-            "scripts/preflight.py",
-            "scripts/extract.py",
-            "scripts/solve_layout.py",
-            "scripts/qa_pdf.py",
-        )
-    )
-    assert "diagnostic" in lowered
-    assert "internal stdout" in lowered
-    assert "final pdf" in lowered
+def test_skill_routes_paragraph_batches_focused_review_and_recovery():
+    content = (ROOT / "SKILL.md").read_text(encoding="utf-8").casefold()
+    assert "scripts/prepare_job.py" in content and "scripts/finish_job.py" in content
+    assert "packets" in content and "assemble" in content
+    assert "reuse" in content and "retry" in content
+    assert "known issues" in content
 
 
-def test_runbook_uses_the_safe_binding_helper_with_private_templates() -> None:
-    runbook_path = ROOT / "references" / "runbook.md"
-    runbook = runbook_path.read_text(encoding="utf-8")
-    lowered = runbook.casefold()
-
-    assert "outside the repository" in lowered
-    assert "outside the managed job" in lowered
-    assert "absolute" in lowered and "output" in lowered
-    assert "untrusted data" in lowered
-    assert all(
-        field in runbook
-        for field in (
-            "review.translation_hash",
-            "units_hash",
-            "translation_hash",
-            "review_hash",
-            "ambiguity_key.id",
-        )
-    )
-    assert "result.artifact_hashes.units" in runbook
-    assert "scripts/agent_artifacts.py" in runbook
-    assert (ROOT / "scripts" / "agent_artifacts.py").is_file()
-    assert "canonical-hash --schema translation" in runbook
-    assert "canonical-hash --schema review" in runbook
-    assert "canonical-hash --schema semantic-candidates" in runbook
-    assert "ambiguity-key --input" in runbook
-    assert "not implemented" not in lowered
-    assert "whitespace" in lowered and "key order" in lowered
-    assert not re.search(
-        r"(?m)^\s*(?:python|py)\s+-c\b",
-        runbook,
-    )
-
-    templates = [
-        json.loads(raw)
-        for raw in re.findall(r"```json\n(.*?)\n```", runbook, re.DOTALL)
-    ]
-    assert {template.get("artifact_kind") for template in templates} >= {
-        "translation",
-        "review",
-        "semantic-candidates",
-    }
+def test_runbook_uses_private_compact_drafts_and_program_owned_bindings():
+    content = (ROOT / "references/runbook.md").read_text(encoding="utf-8").casefold()
+    assert "outside the repository" in content and "absolute" in content
+    assert "agent_artifacts.py assemble" in content
+    assert "extracted checkpoint" in content
+    assert "only prepare and finish" in content
 
 
 def test_public_status_matches_the_declared_release_lifecycle() -> None:
@@ -161,17 +109,8 @@ def test_public_status_matches_the_declared_release_lifecycle() -> None:
     status = json.loads(
         (ROOT / "compliance" / "release-status.json").read_text(encoding="utf-8")
     )
-    plan = (
-        ROOT
-        / "docs"
-        / "superpowers"
-        / "plans"
-        / "2026-08-27-academic-pdf-bilingual-reader-implementation-plan.md"
-    ).read_text(encoding="utf-8")
-
     state = status["state"]
     assert state in {"PUBLIC_RELEASE_BLOCKED", "PUBLIC_RELEASE_READY"}
-    plan_top = "\n".join(plan.splitlines()[:15])
     if state == "PUBLIC_RELEASE_BLOCKED":
         for public_doc in (readme, privacy):
             top = "\n".join(public_doc.splitlines()[:25]).casefold()
@@ -179,20 +118,15 @@ def test_public_status_matches_the_declared_release_lifecycle() -> None:
             assert "passed local acceptance" in top
             assert "public release" in top and "blocked" in top
             assert "production-ready" not in top
-        assert "本地候选实现" in plan_top
-        assert "验收已完成" in plan_top
-        assert "公开发布仍阻断" in plan_top
     else:
         assert "public release remains blocked" not in readme.casefold()
         assert "public release remains blocked" not in privacy.casefold()
         assert "not a release or deployment claim" not in privacy.casefold()
-        assert "公开发布仍阻断" not in plan_top
 
 
 def test_schema_guide_covers_parent_bound_semantic_candidates() -> None:
     guide = (ROOT / "references" / "schemas.md").read_text(encoding="utf-8")
 
-    assert "semantic-candidates.json" in guide
-    assert all(
-        field in guide for field in ("units_hash", "translation_hash", "review_hash")
-    )
+    assert "semantic-candidates" in guide
+    assert "units_hash" in guide and "assemb" in guide
+    assert "reviewed_unit_ids" in guide and "Frame-graph/layout" in guide

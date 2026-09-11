@@ -18,30 +18,48 @@
     "figure_candidates"
   ],
   "properties": {
-    "schema_version": {"const": "1.0.0"},
-    "artifact_kind": {"const": "semantic-candidates"},
-    "units_hash": {"$ref": "#/$defs/sha256"},
-    "translation_hash": {"$ref": "#/$defs/sha256"},
-    "review_hash": {"$ref": "#/$defs/sha256"},
+    "schema_version": {
+      "const": "1.0.0"
+    },
+    "artifact_kind": {
+      "const": "semantic-candidates"
+    },
+    "units_hash": {
+      "$ref": "#/$defs/sha256"
+    },
+    "translation_hash": {
+      "$ref": "#/$defs/sha256"
+    },
+    "review_hash": {
+      "$ref": "#/$defs/sha256"
+    },
     "red_candidates": {
       "type": "array",
       "maxItems": 5000,
-      "items": {"$ref": "#/$defs/red_candidate"}
+      "items": {
+        "$ref": "#/$defs/red_candidate"
+      }
     },
     "ambiguity_occurrences": {
       "type": "array",
       "maxItems": 5000,
-      "items": {"$ref": "#/$defs/ambiguity_occurrence"}
+      "items": {
+        "$ref": "#/$defs/ambiguity_occurrence"
+      }
     },
     "teaching_candidates": {
       "type": "array",
       "maxItems": 2000,
-      "items": {"$ref": "#/$defs/teaching_candidate"}
+      "items": {
+        "$ref": "#/$defs/teaching_candidate"
+      }
     },
     "figure_candidates": {
       "type": "array",
       "maxItems": 500,
-      "items": {"$ref": "#/$defs/figure_candidate"}
+      "items": {
+        "$ref": "#/$defs/figure_candidate"
+      }
     }
   },
   "$defs": {
@@ -75,10 +93,18 @@
         "importance"
       ],
       "properties": {
-        "candidate_id": {"$ref": "#/$defs/identifier"},
-        "unit_id": {"$ref": "#/$defs/identifier"},
-        "target_start": {"$ref": "#/$defs/position"},
-        "target_end": {"$ref": "#/$defs/position"},
+        "candidate_id": {
+          "$ref": "#/$defs/identifier"
+        },
+        "unit_id": {
+          "$ref": "#/$defs/identifier"
+        },
+        "target_start": {
+          "$ref": "#/$defs/position"
+        },
+        "target_end": {
+          "$ref": "#/$defs/position"
+        },
         "importance": {
           "enum": [
             "other",
@@ -99,10 +125,18 @@
         "target_end"
       ],
       "properties": {
-        "ambiguity_key_id": {"$ref": "#/$defs/sha256"},
-        "unit_id": {"$ref": "#/$defs/identifier"},
-        "target_start": {"$ref": "#/$defs/position"},
-        "target_end": {"$ref": "#/$defs/position"}
+        "ambiguity_key_id": {
+          "$ref": "#/$defs/sha256"
+        },
+        "unit_id": {
+          "$ref": "#/$defs/identifier"
+        },
+        "target_start": {
+          "$ref": "#/$defs/position"
+        },
+        "target_end": {
+          "$ref": "#/$defs/position"
+        }
       }
     },
     "teaching_occurrence": {
@@ -116,11 +150,21 @@
         "target_end"
       ],
       "properties": {
-        "unit_id": {"$ref": "#/$defs/identifier"},
-        "source_start": {"$ref": "#/$defs/position"},
-        "source_end": {"$ref": "#/$defs/position"},
-        "target_start": {"$ref": "#/$defs/position"},
-        "target_end": {"$ref": "#/$defs/position"}
+        "unit_id": {
+          "$ref": "#/$defs/identifier"
+        },
+        "source_start": {
+          "$ref": "#/$defs/position"
+        },
+        "source_end": {
+          "$ref": "#/$defs/position"
+        },
+        "target_start": {
+          "$ref": "#/$defs/position"
+        },
+        "target_end": {
+          "$ref": "#/$defs/position"
+        }
       }
     },
     "teaching_candidate": {
@@ -134,7 +178,9 @@
         "occurrences"
       ],
       "properties": {
-        "key": {"$ref": "#/$defs/identifier"},
+        "key": {
+          "$ref": "#/$defs/identifier"
+        },
         "english_original": {
           "type": "string",
           "minLength": 1,
@@ -145,12 +191,19 @@
           "minLength": 1,
           "maxLength": 4096
         },
-        "value_priority": {"$ref": "#/$defs/priority"},
+        "value_priority": {
+          "$ref": "#/$defs/priority"
+        },
         "occurrences": {
           "type": "array",
           "minItems": 1,
           "maxItems": 128,
-          "items": {"$ref": "#/$defs/teaching_occurrence"}
+          "items": {
+            "$ref": "#/$defs/teaching_occurrence"
+          }
+        },
+        "essential": {
+          "type": "boolean"
         }
       }
     },
@@ -165,10 +218,18 @@
         "quote"
       ],
       "properties": {
-        "evidence_kind": {"const": "semantic-unit"},
-        "unit_id": {"$ref": "#/$defs/identifier"},
-        "source_start": {"$ref": "#/$defs/position"},
-        "source_end": {"$ref": "#/$defs/position"},
+        "evidence_kind": {
+          "const": "semantic-unit"
+        },
+        "unit_id": {
+          "$ref": "#/$defs/identifier"
+        },
+        "source_start": {
+          "$ref": "#/$defs/position"
+        },
+        "source_end": {
+          "$ref": "#/$defs/position"
+        },
         "quote": {
           "type": "string",
           "minLength": 1,
@@ -192,11 +253,21 @@
         "essential"
       ],
       "properties": {
-        "key": {"$ref": "#/$defs/identifier"},
-        "figure_id": {"$ref": "#/$defs/identifier"},
-        "caption_unit_id": {"$ref": "#/$defs/identifier"},
-        "target_start": {"$ref": "#/$defs/position"},
-        "target_end": {"$ref": "#/$defs/position"},
+        "key": {
+          "$ref": "#/$defs/identifier"
+        },
+        "figure_id": {
+          "$ref": "#/$defs/identifier"
+        },
+        "caption_unit_id": {
+          "$ref": "#/$defs/identifier"
+        },
+        "target_start": {
+          "$ref": "#/$defs/position"
+        },
+        "target_end": {
+          "$ref": "#/$defs/position"
+        },
         "content": {
           "type": "string",
           "minLength": 1,
@@ -211,10 +282,16 @@
           "type": "array",
           "minItems": 1,
           "maxItems": 16,
-          "items": {"$ref": "#/$defs/direct_evidence"}
+          "items": {
+            "$ref": "#/$defs/direct_evidence"
+          }
         },
-        "value_priority": {"$ref": "#/$defs/priority"},
-        "essential": {"type": "boolean"}
+        "value_priority": {
+          "$ref": "#/$defs/priority"
+        },
+        "essential": {
+          "type": "boolean"
+        }
       }
     }
   }

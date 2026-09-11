@@ -377,60 +377,46 @@ def _page_and_block_mappings(
     for page_index, (plan_page, image_fingerprints) in enumerate(
         zip(plan["pages"], overlay_image_fingerprints, strict=True)
     ):
-        if plan_page["page_kind"] == "disclaimer":
-            pages.append(
-                {
-                    "output_page_number": plan_page["page_number"],
-                    "source_page_number": None,
-                    "page_kind": "disclaimer",
-                    "continuation_index": 0,
-                    "source_crop_box_mpt": None,
-                    "source_normalized_visible_box_mpt": None,
-                    "source_rotation_degrees": None,
-                    "source_transform_mpt": None,
-                    "overlay_page_plan_hash": plan_page["page_plan_hash"],
-                    "overlay_image_fingerprints": sorted(
-                        fingerprint
-                        for fingerprint, count in image_fingerprints.items()
-                        for _ in range(count)
-                    ),
-                    "continuation_label_present": False,
-                }
-            )
-            continue
         layout_page = layout_pages[page_index]
-        source_page = source_pages[int(layout_page["source_page_number"])]
-        prepared = prepared_sources[int(layout_page["source_page_number"]) - 1]
-        crop = source_page["crop_box_mpt"]
-        transform = [
-            1000,
-            0,
-            0,
-            1000,
-            round(prepared.translate_x * 1000),
-            round(prepared.translate_y * 1000),
-        ]
+        source_number = layout_page["source_page_number"]
+        source_page = source_pages[source_number] if source_number is not None else None
+        prepared = (
+            prepared_sources[source_number - 1] if source_number is not None else None
+        )
         pages.append(
             {
                 "output_page_number": layout_page["page_number"],
-                "source_page_number": layout_page["source_page_number"],
+                "source_page_number": source_number,
                 "page_kind": layout_page["page_kind"],
                 "continuation_index": layout_page["continuation_index"],
-                "source_crop_box_mpt": list(crop),
+                "source_crop_box_mpt": list(source_page["crop_box_mpt"])
+                if source_page
+                else None,
                 "source_normalized_visible_box_mpt": list(
                     prepared.normalized_visible_box_mpt
-                ),
-                "source_rotation_degrees": source_page["rotation_degrees"],
-                "source_transform_mpt": transform,
+                )
+                if prepared
+                else None,
+                "source_rotation_degrees": source_page["rotation_degrees"]
+                if source_page
+                else None,
+                "source_transform_mpt": [
+                    1000,
+                    0,
+                    0,
+                    1000,
+                    round(prepared.translate_x * 1000),
+                    round(prepared.translate_y * 1000),
+                ]
+                if prepared
+                else None,
                 "overlay_page_plan_hash": plan_page["page_plan_hash"],
                 "overlay_image_fingerprints": sorted(
                     fingerprint
                     for fingerprint, count in image_fingerprints.items()
                     for _ in range(count)
                 ),
-                "continuation_label_present": (
-                    plan_page["continuation_label"] is not None
-                ),
+                "continuation_label_present": False,
             }
         )
         for block in layout_page["blocks"]:
@@ -490,7 +476,7 @@ def _compose_pdf_bytes(
             width=A3_LANDSCAPE_WIDTH_MPT / 1000,
             height=A3_LANDSCAPE_HEIGHT_MPT / 1000,
         )
-        if plan_page["page_kind"] != "disclaimer":
+        if plan_page["source_page_number"] is not None:
             source_index = int(plan_page["source_page_number"]) - 1
             prepared = prepared_sources[source_index]
             destination.merge_transformed_page(

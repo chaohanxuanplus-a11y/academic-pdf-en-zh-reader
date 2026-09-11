@@ -19,7 +19,7 @@ from academic_pdf_en_zh_reader.annotations.validation import (
 )
 from academic_pdf_en_zh_reader.review.review_validation import (
     ReviewValidationError,
-    validate_independent_review,
+    validate_review,
 )
 from academic_pdf_en_zh_reader.typography.style_contract import (
     TypographyStyleContract,
@@ -88,7 +88,7 @@ def build_ambiguity_marks(
 
     index = annotation_index(units, translation)
     try:
-        validate_independent_review(translation, review)
+        validate_review(translation, review)
     except ReviewValidationError as exc:
         raise AnnotationValidationError("ambiguity review input is invalid") from exc
     unresolved = _unresolved_keys(review)

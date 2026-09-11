@@ -31,10 +31,10 @@ from academic_pdf_en_zh_reader.orchestration.prepare import (
 from academic_pdf_en_zh_reader.review.review_validation import (
     ReviewGateResult,
     ReviewValidationError,
-    validate_independent_review,
+    validate_review,
 )
 from academic_pdf_en_zh_reader.review.semantic_checks import (
-    check_mechanical_semantics,
+    unresolved_mechanical_issues,
 )
 from academic_pdf_en_zh_reader.review.translation_validation import (
     TranslationValidationError,
@@ -117,15 +117,17 @@ def _validate_reviewed_chain(
     except TranslationValidationError as exc:
         raise CliStageError("TRANSLATION_INVALID") from exc
     try:
-        mechanical_issues = check_mechanical_semantics(units, translation)
+        mechanical_issues = unresolved_mechanical_issues(units, translation, review)
     except TranslationValidationError as exc:
         raise CliStageError("TRANSLATION_INVALID") from exc
+    except (ValueError, KeyError, TypeError) as exc:
+        raise CliStageError("REVIEW_REQUIRED") from exc
     if mechanical_issues:
         raise CliStageError("MECHANICAL_SEMANTIC_MISMATCH")
     try:
-        return validate_independent_review(translation, review)
+        return validate_review(translation, review)
     except ReviewValidationError as exc:
-        raise CliStageError("INDEPENDENT_REVIEW_REQUIRED") from exc
+        raise CliStageError("REVIEW_REQUIRED") from exc
 
 
 def validate_translation_stage(

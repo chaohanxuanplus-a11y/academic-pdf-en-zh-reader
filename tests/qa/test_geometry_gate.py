@@ -11,24 +11,24 @@ from pypdf import PdfReader
 from academic_pdf_en_zh_reader.qa.geometry import (
     GeometryQaError,
     validate_bounds_and_overlap,
-    validate_mirrored_frames,
+    validate_reading_frames,
 )
 
 
-def test_mirrored_frame_x_coordinates_are_exact(
+def test_continuous_frame_coordinates_are_exact(
     composed_qa_fixture: dict[str, object],
 ) -> None:
-    validate_mirrored_frames(
+    validate_reading_frames(
         composed_qa_fixture["source"],
         composed_qa_fixture["frame_graph"],
         composed_qa_fixture["layout"],
     )
 
-    graph = deepcopy(composed_qa_fixture["frame_graph"])
-    graph["pages"][0]["frames"][0]["text_left_mpt"] += 1
-    with pytest.raises(GeometryQaError, match="GEOMETRY_MIRROR_INVALID"):
-        validate_mirrored_frames(
-            composed_qa_fixture["source"], graph, composed_qa_fixture["layout"]
+    layout = deepcopy(composed_qa_fixture["layout"])
+    layout["pages"][0]["frames"][0]["text_left_mpt"] += 1
+    with pytest.raises(GeometryQaError, match="GEOMETRY_READING_FLOW_INVALID"):
+        validate_reading_frames(
+            composed_qa_fixture["source"], composed_qa_fixture["frame_graph"], layout
         )
 
 

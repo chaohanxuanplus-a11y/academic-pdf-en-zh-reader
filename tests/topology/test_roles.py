@@ -37,6 +37,33 @@ def _by_role(blocks, role: str):
     return [block for block in blocks if block.role == role]
 
 
+def test_first_page_metadata_in_another_band_is_not_translated(tmp_path: Path) -> None:
+    page, _bands = _page_and_bands("first-page-mixed", tmp_path)
+    page["lines"].append(
+        _real_shape_line(
+            "journal-header",
+            "SYNTHETIC JOURNAL",
+            y_top_mpt=830_000,
+            font_size_mpt=8_000,
+        )
+    )
+    page["lines"].append(
+        _real_shape_line(
+            "correspondence",
+            "✉ Corresponding authors: Synthetic Author",
+            y_top_mpt=43_000,
+            font_size_mpt=8_000,
+        )
+    )
+    bands = detect_document_bands({"pages": [page]})[0]
+    blocks = classify_page_lines(page, bands)
+    header = next(b for b in blocks if "SYNTHETIC JOURNAL" in b.text)
+    correspondence = next(b for b in blocks if "Corresponding authors:" in b.text)
+    assert header.role == "bibliographic-metadata"
+    assert correspondence.role == "footnote"
+    assert header.translation_policy == correspondence.translation_policy == "excluded"
+
+
 def _single_column_bands(page_number: int) -> PageBands:
     column = ColumnGeometry(
         id=f"p{page_number:04d}-band-001-col-001",

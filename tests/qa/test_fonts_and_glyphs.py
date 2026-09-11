@@ -38,8 +38,9 @@ def test_native_source_text_is_allowed_when_page_has_no_planned_draw_runs(
     manifest = deepcopy(composed_qa_fixture["render_manifest"])
     plan = deepcopy(composed_qa_fixture["overlay_plan"])
     for page in plan["pages"]:
-        if page["page_kind"] != "disclaimer":
-            page["draw_runs"] = []
+        page["draw_runs"] = [
+            r for r in page["draw_runs"] if r["content_kind"] == "brand"
+        ]
     for usage in manifest["font_usages"]:
         usage["draw_run_count"] = sum(
             run["font_role"] == usage["font_role"]

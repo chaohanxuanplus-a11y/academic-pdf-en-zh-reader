@@ -124,6 +124,6 @@ def test_candidate_change_changes_hash_and_forged_hash_is_rejected() -> None:
             units,
             translation,
             candidate_set=forged,
-            auxiliary_size_mpt=8_600,
-            trial_layout=lambda _: LayoutTrialResult(True, 0),
+            auxiliary_size_mpt=9_000,
+            trial_layout=lambda _: LayoutTrialResult(True, 0, 1, 1),
         )

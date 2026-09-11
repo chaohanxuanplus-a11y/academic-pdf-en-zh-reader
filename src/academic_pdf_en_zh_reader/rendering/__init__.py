@@ -9,9 +9,6 @@ from academic_pdf_en_zh_reader.rendering.compose import (
     compose_bilingual_pdf,
 )
 from academic_pdf_en_zh_reader.rendering.contracts import (
-    FrozenContinuationHeader,
-    FrozenContinuationLabel,
-    LeaderReflowRequired,
     OverlayPlanError,
     OverlayPlanLimits,
 )
@@ -20,9 +17,6 @@ from academic_pdf_en_zh_reader.rendering.overlay_plan import build_overlay_plan
 __all__ = [
     "CompositionError",
     "CompositionResult",
-    "FrozenContinuationHeader",
-    "FrozenContinuationLabel",
-    "LeaderReflowRequired",
     "OverlayPlanError",
     "OverlayPlanLimits",
     "build_overlay_plan",

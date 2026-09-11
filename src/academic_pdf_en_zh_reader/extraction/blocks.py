@@ -136,15 +136,41 @@ def _table_boxes(page: PageObjects) -> list[BoxMpt]:
 
 
 def _horizontal_rules(page: PageObjects) -> list[VectorObject]:
-    return [
+    candidates = [
         item
-        for item in page.curves
-        if item.source_kind == "line"
-        and item.stroked
-        and item.bbox_mpt[2] - item.bbox_mpt[0] >= 40_000
+        for item in (*page.curves, *page.rectangles)
+        if (
+            (
+                item.source_kind in {"line", "curve"}
+                and item.stroked
+                and item.bbox_mpt[1] == item.bbox_mpt[3]
+            )
+            or (
+                item.source_kind == "rect"
+                and item.filled
+                and 0 < item.bbox_mpt[3] - item.bbox_mpt[1] <= 2_000
+            )
+        )
+        and item.bbox_mpt[2] > item.bbox_mpt[0]
         and item.bbox_mpt[2] - item.bbox_mpt[0]
         > 4 * max(1, item.bbox_mpt[3] - item.bbox_mpt[1])
     ]
+    # Publishers may emit one rule as touching cell-width segments and encode
+    # the bottom rule as a degenerate path. Join only truly collinear neighbors;
+    # a column gutter or any visible vertical path extent prevents joining.
+    merged: list[VectorObject] = []
+    for item in sorted(candidates, key=lambda v: (_rule_y(v), v.bbox_mpt[0], v.id)):
+        if (
+            merged
+            and abs(_rule_y(merged[-1]) - _rule_y(item)) <= 250
+            and item.bbox_mpt[0] <= merged[-1].bbox_mpt[2] + 1_000
+        ):
+            merged[-1] = replace(
+                merged[-1], bbox_mpt=_union([merged[-1].bbox_mpt, item.bbox_mpt])
+            )
+        else:
+            merged.append(item)
+    return [item for item in merged if item.bbox_mpt[2] - item.bbox_mpt[0] >= 40_000]
 
 
 def _rule_y(rule: VectorObject) -> int:
@@ -320,6 +346,7 @@ def _graphic_regions(
             _contains(rectangle.bbox_mpt, table_box) for table_box in table_boxes
         ):
             candidates.append(("figure", rectangle.bbox_mpt, "enclosed-vector-drawing"))
+    candidates = _caption_bounded_figures(page, lines, candidates)
     candidates.sort(key=lambda item: (-item[1][3], item[1][0], item[0], item[1]))
     return tuple(
         GraphicRegion(
@@ -331,6 +358,138 @@ def _graphic_regions(
         )
         for ordinal, (kind, box, evidence) in enumerate(candidates, start=1)
     )
+
+
+def _caption_bounded_figures(
+    page: PageObjects,
+    lines: tuple[TextLine, ...],
+    candidates: list[tuple[str, BoxMpt, str]],
+) -> list[tuple[str, BoxMpt, str]]:
+    """Bind a caption-separated drawing band, including exterior axis labels.
+
+    A numbered caption alone is insufficient: require nearby drawing objects,
+    a prose/caption boundary, and no intervening prose. Never infer pixel data.
+    Existing primitive regions remain when these conditions are not satisfied.
+    """
+    strict_caption = re.compile(r"^(?:Figure|Fig\.?)\s+\d+\.\s", re.IGNORECASE)
+    result = list(candidates)
+    protected_tables = [
+        box
+        for kind, box, _evidence in candidates
+        if kind == "table" and any(_caption_matches_box(line, box) for line in lines)
+    ]
+    prose_fonts = {
+        (font, line.max_font_size_mpt)
+        for line in lines
+        if len(line.text.split()) >= 7
+        and line.bbox_mpt[2] - line.bbox_mpt[0] >= 120000
+        and not any(_contains(box, line.bbox_mpt) for _kind, box, _e in candidates)
+        for font in line.font_names
+    }
+    for caption in lines:
+        if not strict_caption.match(caption.text) or not caption.coverage_eligible:
+            continue
+        if any(_contains(box, caption.bbox_mpt) for _kind, box, _e in candidates):
+            continue
+        left, _bottom, right, bottom = caption.bbox_mpt
+        # A short inline figure reference is not enough to define a drawing band.
+        if right - left < 120_000:
+            continue
+        same_row_caption = any(
+            other.id != caption.id
+            and _CAPTION.match(other.text)
+            and abs(other.bbox_mpt[3] - bottom) < caption.max_font_size_mpt * 2
+            for other in lines
+        )
+        span = caption.bbox_mpt
+        boundaries = [
+            line.bbox_mpt[1]
+            for line in lines
+            if line.id != caption.id
+            and line.coverage_eligible
+            and line.bbox_mpt[1] > bottom
+            and _horizontal_overlap(line.bbox_mpt, span) > 0
+            and (
+                _CAPTION.match(line.text)
+                or (
+                    (
+                        len(line.text.split()) >= 7
+                        or any(
+                            (font, line.max_font_size_mpt) in prose_fonts
+                            for font in line.font_names
+                        )
+                    )
+                    and line.max_font_size_mpt >= caption.max_font_size_mpt
+                    and not any(
+                        _contains(box, line.bbox_mpt) for _k, box, _e in candidates
+                    )
+                )
+            )
+        ]
+        top = min(boundaries, default=page.crop_box_mpt[3])
+        if not same_row_caption and not any(
+            line.coverage_eligible
+            and bottom < line.bbox_mpt[1] < top
+            and _horizontal_overlap(line.bbox_mpt, span) == 0
+            and len(line.text.split()) >= 7
+            and line.bbox_mpt[2] - line.bbox_mpt[0] >= 120_000
+            and line.max_font_size_mpt >= caption.max_font_size_mpt
+            for line in lines
+        ):
+            span = page.crop_box_mpt
+        shapes = [
+            obj.bbox_mpt
+            for obj in (*page.images, *page.rectangles, *page.curves)
+            if obj.bbox_mpt[1] > bottom
+            and obj.bbox_mpt[3] < top
+            and _horizontal_overlap(obj.bbox_mpt, span) > 0
+            and not any(_contains(box, obj.bbox_mpt) for box in protected_tables)
+            and max(
+                obj.bbox_mpt[2] - obj.bbox_mpt[0], obj.bbox_mpt[3] - obj.bbox_mpt[1]
+            )
+            >= 5_000
+        ]
+        if len(shapes) < 2:
+            continue
+        drawing = _union(shapes)
+        if drawing[1] - bottom > 50_000 or drawing[3] - drawing[1] < 30_000:
+            continue
+        label_margin = max(20_000, caption.max_font_size_mpt * 5)
+        labels = [
+            line.bbox_mpt
+            for line in lines
+            if line.coverage_eligible
+            and bottom < line.bbox_mpt[1]
+            and line.bbox_mpt[3] < top
+            and drawing[1] - label_margin <= line.bbox_mpt[1]
+            and line.bbox_mpt[3] <= drawing[3] + label_margin
+            and drawing[0] - label_margin <= line.bbox_mpt[0]
+            and line.bbox_mpt[2] <= drawing[2] + label_margin
+            and _CAPTION.match(line.text) is None
+            and not any(_contains(box, line.bbox_mpt) for box in protected_tables)
+            and (
+                not any(
+                    (font, line.max_font_size_mpt) in prose_fonts
+                    for font in line.font_names
+                )
+                or any(_contains(box, line.bbox_mpt) for _kind, box, _e in candidates)
+            )
+        ]
+        envelope = _union([drawing, *labels])
+        if any(_intersects(envelope, box, tolerance=0) for box in protected_tables):
+            continue
+        if any(
+            _intersects(envelope, box, tolerance=0) and not _contains(envelope, box)
+            for _kind, box, _e in result
+        ):
+            continue
+        result = [
+            (kind, box, evidence)
+            for kind, box, evidence in result
+            if not _contains(envelope, box)
+        ]
+        result.append(("figure", envelope, "caption-bounded-composite"))
+    return result
 
 
 def _horizontal_overlap(first: BoxMpt, second: BoxMpt) -> int:
@@ -356,6 +515,15 @@ def _has_caption_continuation_evidence(
         return False
     first = text[0]
     if first.islower() or first.isdigit() or first in "([{,.;:–—-":
+        return True
+    if (
+        bool(set(candidate.font_names) & set(current.font_names))
+        and candidate.max_font_size_mpt == current.max_font_size_mpt
+        and all(
+            "bold" in name.casefold()
+            for name in (*current.font_names, *candidate.font_names)
+        )
+    ):
         return True
     return current.text.rstrip().endswith(("-", "–", "—", "/", "(", "["))
 
@@ -433,7 +601,7 @@ def _captions(
                 <= current.bbox_mpt[1] - candidate.bbox_mpt[3]
                 <= max(4_000, current.max_font_size_mpt)
                 and abs(candidate.bbox_mpt[0] - line.bbox_mpt[0]) <= 3_000
-                and _horizontal_overlap(candidate.bbox_mpt, target.bbox_mpt) > 0
+                and _horizontal_overlap(candidate.bbox_mpt, line.bbox_mpt) > 0
                 and _CAPTION.match(candidate.text) is None
                 and candidate.container_id is None
                 and (
@@ -617,6 +785,98 @@ def _mark_internal_lines(
     return tuple(marked)
 
 
+def _mark_equation_lines(lines: tuple[TextLine, ...]) -> tuple[TextLine, ...]:
+    """Keep evidenced display mathematics in the vector original, not prose.
+
+    A right-aligned equation number plus an operator between neighboring prose
+    boundaries establishes a zone. Long lexical prose is never consumed. Math
+    font fragments can also be excluded independently, but not ordinary words.
+    """
+    math_font = re.compile(r"(?:math|symbol|txsy|txex|rtxr|rtxmi|NimbusRom)", re.I)
+    number_label = re.compile(r"^[−+\s]*\(\d{1,3}\)$")
+    operators = re.compile(r"[=∑√×→]")
+    allowed_words = {"sqrt", "cos", "sin", "tan", "log", "exp", "ln", "RMSE"}
+
+    def prose(line: TextLine) -> bool:
+        return any(
+            word not in allowed_words and not re.fullmatch(r"(?:[A-Z][a-z]?)+", word)
+            for word in re.findall(r"[A-Za-z]{4,}", line.text)
+        )
+
+    eligible = [
+        line for line in lines if line.coverage_eligible and line.container_id is None
+    ]
+    excluded = {
+        line.id
+        for line in eligible
+        if not prose(line) and any(math_font.search(font) for font in line.font_names)
+    }
+    for label in eligible:
+        if not number_label.fullmatch(label.text.strip()):
+            continue
+        neighbors = [
+            line
+            for line in eligible
+            if prose(line)
+            and abs(line.bbox_mpt[2] - label.bbox_mpt[2]) <= 50000
+            and line.bbox_mpt[0] < label.bbox_mpt[0] - 50000
+        ]
+        above = min(
+            (line for line in neighbors if line.bbox_mpt[1] > label.bbox_mpt[3]),
+            key=lambda line: line.bbox_mpt[1],
+            default=None,
+        )
+        below = max(
+            (line for line in neighbors if line.bbox_mpt[3] < label.bbox_mpt[1]),
+            key=lambda line: line.bbox_mpt[3],
+            default=None,
+        )
+        if above is None or below is None:
+            continue
+        if above.bbox_mpt[1] - below.bbox_mpt[3] > 150000:
+            continue
+        left = min(above.bbox_mpt[0], below.bbox_mpt[0])
+        members = [
+            line
+            for line in eligible
+            if not prose(line)
+            and left - 1000 <= line.bbox_mpt[0]
+            and line.bbox_mpt[2] <= label.bbox_mpt[2] + 1000
+            and below.bbox_mpt[3] < line.bbox_mpt[3]
+            and line.bbox_mpt[1] < above.bbox_mpt[1]
+        ]
+        if any(operators.search(line.text) for line in members):
+            excluded.update(line.id for line in members)
+    seeds = [line for line in eligible if line.id in excluded]
+    for line in eligible:
+        if (
+            re.fullmatch(r"[A-Za-zΔρ]{1,4}", line.text.strip())
+            and not prose(line)
+            and any(
+                operators.search(seed.text)
+                and _vertical_distance(line.bbox_mpt, seed.bbox_mpt) <= 1000
+                and min(
+                    abs(line.bbox_mpt[2] - seed.bbox_mpt[0]),
+                    abs(seed.bbox_mpt[2] - line.bbox_mpt[0]),
+                )
+                <= 20000
+                for seed in seeds
+            )
+        ):
+            excluded.add(line.id)
+    return tuple(
+        replace(
+            line,
+            body_eligible=False,
+            coverage_eligible=False,
+            exclusion_kind="equation",
+        )
+        if line.id in excluded
+        else line
+        for line in lines
+    )
+
+
 def _references(
     page_number: int,
     lines: tuple[TextLine, ...],
@@ -670,6 +930,7 @@ def build_basic_blocks(
         lines = _mark_internal_lines(line_page.lines, regions)
         captions = _captions(page.page_number, lines, regions)
         lines = _mark_table_notes(lines, regions, captions)
+        lines = _mark_equation_lines(lines)
         caption_line_ids = {
             line_id for caption in captions for line_id in caption.line_ids
         }

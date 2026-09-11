@@ -37,7 +37,9 @@ _AFFILIATION_START = re.compile(
 )
 _AFFILIATION_MARKER = re.compile(r"^\s*[a-z](?:\s*,\s*[a-z])*\s*$", re.IGNORECASE)
 _FOOTNOTE_MARKER = re.compile(r"^\s*[∗*†‡]\s*$")
-_CORRESPONDING_AUTHOR = re.compile(r"^\s*corresponding\s+author\b", re.IGNORECASE)
+_CORRESPONDING_AUTHOR = re.compile(
+    r"^\s*(?:✉\s*)?corresponding\s+authors?\b", re.IGNORECASE
+)
 _EQUAL_CONTRIBUTION = re.compile(
     r"^\s*\d+\s+all\s+authors\s+contributed\b",
     re.IGNORECASE,
@@ -226,6 +228,7 @@ def _plain_roles(
     page_number: int,
     title_ids: set[str],
     typical_font_mpt: int,
+    title_top_mpt: int | None = None,
 ) -> dict[str, str]:
     """Classify ordinary lines, keeping abstract state local to each column."""
 
@@ -247,6 +250,14 @@ def _plain_roles(
         if identifier in title_ids:
             roles[identifier] = "title"
             title_seen = True
+            previous = line
+            continue
+        if (
+            page_number == 1
+            and title_top_mpt is not None
+            and _box(line.get("bbox_mpt"))[1] >= title_top_mpt
+        ):
+            roles[identifier] = "bibliographic-metadata"
             previous = line
             continue
         if page_number == 1 and front_matter_open and not title_seen:
@@ -494,6 +505,14 @@ def classify_page_lines(
     ]
     typical_font = int(median(font_samples)) if font_samples else 10_000
     title_ids = _title_ids(ordinary, page_number=page_number)
+    title_top = max(
+        (
+            _box(line.get("bbox_mpt"))[3]
+            for line in ordinary
+            if str(line["id"]) in title_ids
+        ),
+        default=None,
+    )
     roles: dict[str, str] = {}
     for band in page_bands.bands:
         for column in band.columns:
@@ -508,6 +527,7 @@ def classify_page_lines(
                     page_number=page_number,
                     title_ids=title_ids,
                     typical_font_mpt=typical_font,
+                    title_top_mpt=title_top,
                 )
             )
 

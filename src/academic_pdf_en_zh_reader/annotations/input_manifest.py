@@ -36,7 +36,7 @@ from academic_pdf_en_zh_reader.annotations.validation import (
 from academic_pdf_en_zh_reader.job.hashing import sha256_canonical
 from academic_pdf_en_zh_reader.review.review_validation import (
     ReviewValidationError,
-    validate_independent_review,
+    validate_review,
 )
 from academic_pdf_en_zh_reader.review.translation_validation import (
     TranslationValidationError,
@@ -138,6 +138,7 @@ def _teaching_candidates(
                     for occurrence in occurrences
                 ),
                 value_priority=int(row["value_priority"]),
+                essential=bool(row.get("essential", True)),
             )
         )
     return tuple(candidates)
@@ -203,7 +204,7 @@ def adapt_semantic_candidate_manifest(
 
     try:
         validate_translation_artifact(units, translation)
-        validate_independent_review(translation, review)
+        validate_review(translation, review)
         if not isinstance(style_contract, TypographyStyleContract):
             raise TypeError("style contract has an invalid type")
     except (TranslationValidationError, ReviewValidationError, TypeError) as exc:
@@ -216,6 +217,17 @@ def adapt_semantic_candidate_manifest(
     }
     if any(manifest[field] != digest for field, digest in expected_parents.items()):
         raise SemanticCandidateManifestError("SEMANTIC_CANDIDATES_PARENT_MISMATCH")
+
+    if units["units"] and not manifest["teaching_candidates"]:
+        raise SemanticCandidateManifestError("CORE_VOCABULARY_MISSING")
+    captions = {
+        u["id"]
+        for u in units["units"]
+        if u["role"] in {"figure-caption", "table-caption"}
+    }
+    covered = {c["caption_unit_id"] for c in manifest["figure_candidates"]}
+    if captions - covered:
+        raise SemanticCandidateManifestError("CORE_FIGURE_READING_MISSING")
 
     try:
         ambiguity_marks = build_ambiguity_marks(

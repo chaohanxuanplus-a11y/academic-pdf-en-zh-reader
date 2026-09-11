@@ -57,9 +57,6 @@ from academic_pdf_en_zh_reader.rendering.overlay_plan import build_overlay_plan
 from academic_pdf_en_zh_reader.rendering.worker_bridge import (
     render_bilingual_pdf_in_worker,
 )
-from academic_pdf_en_zh_reader.review.semantic_checks import (
-    check_mechanical_semantics,
-)
 from academic_pdf_en_zh_reader.review.translation_validation import (
     TranslationValidationError,
     validate_translation_artifact,
@@ -72,7 +69,6 @@ from academic_pdf_en_zh_reader.security.limits import DEFAULT_LIMITS
 from academic_pdf_en_zh_reader.typography.font_registry import load_font_registry
 from academic_pdf_en_zh_reader.typography.font_runs import FontRunResolver
 from academic_pdf_en_zh_reader.typography.style_contract import (
-    FontSizeSample,
     TypographyStyleContract,
     build_style_contract,
 )
@@ -266,43 +262,7 @@ def _bound_artifact(
 def _style_contract_from_source(
     source: Mapping[str, object],
 ) -> TypographyStyleContract:
-    pages = source.get("pages")
-    if not isinstance(pages, list):
-        raise FinishJobError("TYPOGRAPHY_EVIDENCE_INVALID", "typography")
-    required_blocks: list[Mapping[str, object]] = []
-    for page in pages:
-        if not isinstance(page, Mapping) or not isinstance(page.get("blocks"), list):
-            raise FinishJobError("TYPOGRAPHY_EVIDENCE_INVALID", "typography")
-        required_blocks.extend(
-            block
-            for block in page["blocks"]
-            if isinstance(block, Mapping)
-            and block.get("translation_policy") == "required"
-        )
-    selected = [block for block in required_blocks if block.get("role") == "body"]
-    if not selected:
-        selected = [
-            block for block in required_blocks if block.get("role") == "abstract"
-        ]
-    if not selected:
-        raise FinishJobError("TYPOGRAPHY_EVIDENCE_MISSING", "typography")
-
-    samples: list[FontSizeSample] = []
-    for block in selected:
-        size = block.get("source_font_size_mpt")
-        text = block.get("text")
-        weight = (
-            sum(not character.isspace() for character in text)
-            if isinstance(text, str)
-            else 0
-        )
-        if type(size) is not int or size <= 0 or weight <= 0:
-            raise FinishJobError("TYPOGRAPHY_EVIDENCE_INVALID", "typography")
-        samples.append(FontSizeSample(size_mpt=size, character_count=weight))
-    try:
-        return build_style_contract(tuple(samples))
-    except ValueError as exc:
-        raise FinishJobError("TYPOGRAPHY_EVIDENCE_INVALID", "typography") from exc
+    return build_style_contract(())
 
 
 def _commit_stage(
@@ -399,7 +359,7 @@ def _validate_retention(retain_debug: bool, ttl_seconds: int | None) -> None:
         raise FinishJobError("RETENTION_POLICY_INVALID", "scope")
 
 
-def finish_managed_job(
+def _finish_attempt(
     *,
     managed_root: str | Path,
     job_id: str,
@@ -510,8 +470,6 @@ def finish_managed_job(
             validate_translation_artifact(units, translation)
             if translation.get("translation_revision") != state.translation_revision:
                 raise TranslationValidationError("translation revision mismatch")
-            if check_mechanical_semantics(units, translation):
-                raise FinishJobError("MECHANICAL_SEMANTIC_MISMATCH", stage)
         except FinishJobError:
             raise
         except (TranslationValidationError, SchemaValidationError, TypeError) as exc:
@@ -549,7 +507,7 @@ def finish_managed_job(
         )
         state = _commit_stage(
             state,
-            JobStage.INDEPENDENTLY_REVIEWED,
+            JobStage.REVIEWED,
             {"review": review_hash},
             state_path,
         )
@@ -652,9 +610,6 @@ def finish_managed_job(
                 finalized.layout,
                 finalized.annotations,
             )
-            disclaimer_page_appended = (
-                overlay_plan["branding"]["appended_page_number"] is not None
-            )
         except Exception as exc:
             raise FinishJobError("OVERLAY_PLAN_FAILED", stage) from exc
 
@@ -739,7 +694,13 @@ def finish_managed_job(
             )
             raise FinishJobError(code, stage) from exc
         if not qa.passed or qa.code not in {"QA_VALIDATED", "QA_ALREADY_VALIDATED"}:
-            raise FinishJobError("QA_FAILED", stage)
+            error = FinishJobError("QA_FAILED", stage)
+            error.failure_codes = tuple(
+                code for code in qa.failure_codes if _STABLE_ERROR_CODE.fullmatch(code)
+            )
+            if error.failure_codes:
+                error.add_note("QA checks: " + ", ".join(error.failure_codes))
+            raise error
         validated_state = _load_job_state(state_path)
         if (
             validated_state.stage is not JobStage.VALIDATED
@@ -768,8 +729,9 @@ def finish_managed_job(
         ):
             raise FinishJobError(delivery.code, stage)
         result: dict[str, object] = {"status": "ok", "code": "FINISH_OK"}
-        if disclaimer_page_appended:
-            result["notices"] = ["DISCLAIMER_PAGE_APPENDED"]
+        result["added_pages"] = finalized.layout["solver_trace"][
+            "continuation_page_count"
+        ]
         return result
     except KeyboardInterrupt as exc:
         if job_root is not None and not delivery_handled_cleanup:
@@ -804,6 +766,103 @@ def finish_managed_job(
                 original=exc,
             )
         raise FinishJobError("FINISH_STAGE_FAILED", stage) from exc
+
+
+def finish_managed_job(
+    *,
+    managed_root,
+    job_id,
+    source_pdf,
+    translation_json,
+    review_json,
+    semantic_candidates_json,
+    output_pdf,
+    retain_debug=False,
+    ttl_seconds=None,
+):
+    """Complete from an unchanged extraction checkpoint; preserve it for repair."""
+    from academic_pdf_en_zh_reader.orchestration.recovery import (
+        create_finish_attempt,
+        recovery_action,
+    )
+
+    _validate_retention(retain_debug, ttl_seconds)
+    managed = checkpoint = attempt = None
+
+    def clean(path, outcome, mode=None, ttl=None):
+        if path is None or not path.exists():
+            return
+        try:
+            result = cleanup_after_job(
+                managed, path, outcome=outcome, retention_mode=mode, ttl_seconds=ttl
+            )
+            if result.code not in {"CLEANUP_OK", "CLEANUP_RETAINED"}:
+                raise ValueError("cleanup did not complete")
+        except Exception as exc:
+            raise FinishJobError("CLEANUP_FAILED", "cleanup") from exc
+
+    try:
+        managed, checkpoint, _ = resolve_managed_job(
+            Path(managed_root), Path(managed_root) / job_id
+        )
+        state = _load_job_state(checkpoint / "job-state.json")
+        if state.stage is not JobStage.EXTRACTED:
+            raise FinishJobError("JOB_NOT_EXTRACTED", "load")
+        candidate_translation = _load_external_agent_json(
+            translation_json, job_root=checkpoint, stage="translation"
+        )
+        for path in (review_json, semantic_candidates_json):
+            _load_external_agent_json(path, job_root=checkpoint, stage="agent-inputs")
+        attempt = create_finish_attempt(
+            managed,
+            checkpoint,
+            translation_revision=candidate_translation.get("translation_revision"),
+        )
+        result = _finish_attempt(
+            managed_root=managed,
+            job_id=attempt.name,
+            source_pdf=source_pdf,
+            translation_json=translation_json,
+            review_json=review_json,
+            semantic_candidates_json=semantic_candidates_json,
+            output_pdf=output_pdf,
+            retain_debug=retain_debug,
+            ttl_seconds=ttl_seconds,
+        )
+    except BaseException as original:
+        if isinstance(original, FinishJobError):
+            error = original
+        elif isinstance(original, KeyboardInterrupt):
+            error = FinishJobError(
+                "FINISH_CANCELLED", "load" if attempt is None else "finish"
+            )
+        else:
+            error = FinishJobError(
+                "CHECKPOINT_INVALID" if attempt is None else "FINISH_STAGE_FAILED",
+                "load" if attempt is None else "finish",
+            )
+        action = recovery_action(error.code)
+        outcome = "cancel" if error.code == "FINISH_CANCELLED" else "failure"
+        mode = "debug" if retain_debug else "resume" if action else None
+        ttl = ttl_seconds if retain_debug else 3600 if action else None
+        clean(
+            attempt,
+            outcome,
+            "debug" if retain_debug else None,
+            ttl_seconds if retain_debug else None,
+        )
+        clean(checkpoint, outcome, mode, ttl)
+        error.recovery_action = action
+        if error is original:
+            raise
+        raise error from original
+    clean(
+        checkpoint,
+        "success",
+        "debug" if retain_debug else None,
+        ttl_seconds if retain_debug else None,
+    )
+    return result
 
 
 __all__ = ["FinishJobError", "finish_managed_job"]

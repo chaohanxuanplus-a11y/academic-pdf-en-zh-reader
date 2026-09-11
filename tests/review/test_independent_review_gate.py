@@ -12,7 +12,7 @@ from academic_pdf_en_zh_reader.corrections.contracts import (
 from academic_pdf_en_zh_reader.job.hashing import sha256_canonical
 from academic_pdf_en_zh_reader.review.review_validation import (
     ReviewValidationError,
-    validate_independent_review,
+    validate_review,
 )
 
 
@@ -57,7 +57,7 @@ def _review(translation: dict[str, object]) -> dict[str, object]:
 def test_independent_review_binds_identity_hash_and_all_unit_ids() -> None:
     translation = _translation()
 
-    result = validate_independent_review(translation, _review(translation))
+    result = validate_review(translation, _review(translation))
 
     assert result.translation_hash == sha256_canonical(translation)
     assert result.reviewed_unit_ids == ("unit-1", "unit-2")
@@ -71,7 +71,7 @@ def test_both_agent_identities_are_required(missing: str) -> None:
     del review[missing]
 
     with pytest.raises(ReviewValidationError, match="identity"):
-        validate_independent_review(translation, review)
+        validate_review(translation, review)
 
 
 def test_reviewer_must_be_distinct_from_translator() -> None:
@@ -80,7 +80,7 @@ def test_reviewer_must_be_distinct_from_translator() -> None:
     review["reviewer_id"] = " TRANSLATOR-Agent-1 "
 
     with pytest.raises(ReviewValidationError, match="distinct"):
-        validate_independent_review(translation, review)
+        validate_review(translation, review)
 
 
 def test_review_translator_identity_must_match_translation_batch() -> None:
@@ -89,7 +89,7 @@ def test_review_translator_identity_must_match_translation_batch() -> None:
     review["translator_id"] = "different-translator"
 
     with pytest.raises(ReviewValidationError, match="translator_id"):
-        validate_independent_review(translation, review)
+        validate_review(translation, review)
 
 
 def test_translation_hash_is_exactly_bound() -> None:
@@ -98,7 +98,7 @@ def test_translation_hash_is_exactly_bound() -> None:
     review["translation_hash"] = "b" * 64
 
     with pytest.raises(ReviewValidationError, match="translation_hash"):
-        validate_independent_review(translation, review)
+        validate_review(translation, review)
 
 
 @pytest.mark.parametrize(
@@ -118,7 +118,7 @@ def test_reviewed_unit_ids_must_match_translation_once_and_in_order(
     review["reviewed_unit_ids"] = reviewed_ids
 
     with pytest.raises(ReviewValidationError, match="unit IDs"):
-        validate_independent_review(translation, review)
+        validate_review(translation, review)
 
 
 def test_issue_unit_id_must_belong_to_bound_translation() -> None:
@@ -136,7 +136,7 @@ def test_issue_unit_id_must_belong_to_bound_translation() -> None:
     ]
 
     with pytest.raises(ReviewValidationError, match="unknown unit"):
-        validate_independent_review(translation, review)
+        validate_review(translation, review)
 
 
 def test_unresolved_hard_error_and_failed_status_block_progression() -> None:
@@ -154,12 +154,12 @@ def test_unresolved_hard_error_and_failed_status_block_progression() -> None:
     ]
 
     with pytest.raises(ReviewValidationError, match="hard_error"):
-        validate_independent_review(translation, review)
+        validate_review(translation, review)
 
     review["issues"][0]["status"] = "resolved"
     review["issues"][0]["resolution"] = "Corrected increase to decrease."
     with pytest.raises(ReviewValidationError, match="final_status"):
-        validate_independent_review(translation, review)
+        validate_review(translation, review)
 
 
 def test_style_improvement_is_structured_and_does_not_block() -> None:
@@ -180,12 +180,12 @@ def test_style_improvement_is_structured_and_does_not_block() -> None:
         }
     ]
 
-    result = validate_independent_review(translation, review)
+    result = validate_review(translation, review)
 
     assert len(result.style_improvements) == 1
     del review["issues"][0]["style_improvement"]
     with pytest.raises(ReviewValidationError, match="style_improvement"):
-        validate_independent_review(translation, review)
+        validate_review(translation, review)
 
 
 def _suggestion(

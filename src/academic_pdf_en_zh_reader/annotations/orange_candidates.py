@@ -28,6 +28,7 @@ class TeachingCandidate:
     chinese_meaning: str
     occurrences: tuple[TeachingOccurrence, ...]
     value_priority: int
+    essential: bool = True
 
 
 def _one_line(value: object, *, label: str) -> str:

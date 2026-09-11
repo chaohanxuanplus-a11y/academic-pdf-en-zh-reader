@@ -24,7 +24,7 @@ class JobStage(StrEnum):
     PREFLIGHTED = "preflighted"
     EXTRACTED = "extracted"
     TRANSLATED = "translated"
-    INDEPENDENTLY_REVIEWED = "independently_reviewed"
+    REVIEWED = "reviewed"
     ANNOTATED = "annotated"
     LAID_OUT = "laid_out"
     RENDERED = "rendered"
@@ -39,6 +39,7 @@ def _build_rerun(
     translation_revision: int,
     artifact_hashes: dict[str, str],
     new_job_id: str,
+    next_translation_revision: int | None = None,
 ) -> JobState:
     """Build rerun state after the storage layer has verified reusable bytes."""
 
@@ -56,7 +57,9 @@ def _build_rerun(
     state = create_job(
         job_id=new_job_id,
         source_sha256=source_sha256,
-        translation_revision=translation_revision + 1,
+        translation_revision=translation_revision + 1
+        if next_translation_revision is None
+        else next_translation_revision,
     )
     state = JobState(
         job_id=state.job_id,
@@ -90,7 +93,7 @@ _REQUIRED_ARTIFACTS = {
     JobStage.PREFLIGHTED: frozenset({"preflight", "normalization", "normalized-pdf"}),
     JobStage.EXTRACTED: frozenset({"source", "units"}),
     JobStage.TRANSLATED: frozenset({"translation"}),
-    JobStage.INDEPENDENTLY_REVIEWED: frozenset({"review"}),
+    JobStage.REVIEWED: frozenset({"review"}),
     JobStage.ANNOTATED: frozenset({"annotations"}),
     JobStage.LAID_OUT: frozenset({"frame-graph", "layout", "finalization-receipt"}),
     JobStage.RENDERED: frozenset({"render-manifest", "pdf"}),

@@ -137,6 +137,7 @@ def create_verified_rerun(
     source_path: str | Path,
     units_path: str | Path,
     new_job_id: str,
+    next_translation_revision: int | None = None,
 ) -> JobState:
     """Verify reusable bytes and create the next translation revision atomically."""
 
@@ -213,6 +214,7 @@ def create_verified_rerun(
         translation_revision=state.translation_revision,
         artifact_hashes=actual_hashes,
         new_job_id=new_job_id,
+        next_translation_revision=next_translation_revision,
     )
 
 

@@ -32,7 +32,7 @@ from academic_pdf_en_zh_reader.layout.frame_graph import DEFAULT_FRAME_GRAPH_CON
 from academic_pdf_en_zh_reader.layout.solver import DEFAULT_LAYOUT_LIMITS
 from academic_pdf_en_zh_reader.rendering.overlay_plan import build_overlay_plan
 from academic_pdf_en_zh_reader.review.review_validation import (
-    validate_independent_review,
+    validate_review,
 )
 from academic_pdf_en_zh_reader.review.translation_validation import (
     validate_translation_artifact,
@@ -293,7 +293,7 @@ def _artifact_inputs(
     validate_artifact("units", units)
     validate_unit_mapping(source, units)
     validate_translation_artifact(units, translation)
-    validate_independent_review(translation, review)
+    validate_review(translation, review)
     return source, units, translation, review
 
 

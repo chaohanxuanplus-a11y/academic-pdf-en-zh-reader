@@ -414,12 +414,10 @@ def finalize_resumed_annotations_and_layout(
     """Rerun finalization without allowing a resumed ledger to change parents."""
 
     if not isinstance(state, JobState) or state.stage not in {
-        JobStage.INDEPENDENTLY_REVIEWED,
+        JobStage.REVIEWED,
         JobStage.ANNOTATED,
     }:
-        raise FinalizationError(
-            "RESUME_STAGE_INVALID: expected independently_reviewed or annotated"
-        )
+        raise FinalizationError("RESUME_STAGE_INVALID: expected reviewed or annotated")
     try:
         validate_artifact("job-state", state.to_dict())
     except (SchemaValidationError, TypeError, ValueError) as exc:

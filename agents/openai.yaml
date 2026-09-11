@@ -3,7 +3,7 @@
 
 interface:
   display_name: "Academic PDF English-Chinese Reader"
-  short_description: "Turn a born-digital English paper into an A3 bilingual PDF"
+  short_description: "Read papers with continuous Chinese columns and contextual notes"
   default_prompt: "Use $academic-pdf-en-zh-reader to normalize my uploaded born-digital English academic PDF and create a validated A3 bilingual reading PDF."
 policy:
   allow_implicit_invocation: true

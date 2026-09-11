@@ -36,6 +36,9 @@ def test_extraction_runtime_is_content_addressed_and_pinned(tmp_path: Path) -> N
     pinned_totals = {
         "093307a844bdf9488d9558c5235bfc68ca2706b395aae130d9181cab64cc23af": 19_394_207,
         "8542426ad87b0467d373a27d791764afaa0bdf1a3aec049b311c59c2ad730a6b": 19_388_267,
+        # Same fixed dependencies with locally rebuilt CFFI 2.1.1: unchanged
+        # official source, no empty manifest, CFG/ASLR/NX enabled; see issue log.
+        "b3c35eab9eafcc6a96c961c0658d31b91f3421376c3db3eeb60a7f33317a528d": 19_388_779,
     }
     assert runtime.extraction_runtime_bytes == copied_bytes
     assert copied_bytes == pinned_totals[copied_fingerprint.hexdigest()]

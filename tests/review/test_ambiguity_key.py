@@ -11,7 +11,7 @@ from academic_pdf_en_zh_reader.job.hashing import sha256_canonical
 from academic_pdf_en_zh_reader.review.review_validation import (
     ReviewValidationError,
     make_ambiguity_key,
-    validate_independent_review,
+    validate_review,
 )
 
 
@@ -70,7 +70,7 @@ def test_unresolved_ambiguity_can_pass_with_sufficient_stable_key() -> None:
     translation = _translation()
     review = _review(translation)
 
-    result = validate_independent_review(translation, review)
+    result = validate_review(translation, review)
 
     assert result.unresolved_ambiguity_keys == (
         review["issues"][0]["ambiguity_key"]["id"],
@@ -116,7 +116,7 @@ def test_broad_or_insufficient_ambiguity_key_is_rejected(
     review["issues"][0]["ambiguity_key"][field] = value
 
     with pytest.raises(ReviewValidationError, match="ambiguity_key"):
-        validate_independent_review(translation, review)
+        validate_review(translation, review)
 
 
 def test_tampered_ambiguity_key_id_is_rejected() -> None:
@@ -125,7 +125,7 @@ def test_tampered_ambiguity_key_id_is_rejected() -> None:
     review["issues"][0]["ambiguity_key"]["id"] = "f" * 64
 
     with pytest.raises(ReviewValidationError, match="ambiguity_key"):
-        validate_independent_review(translation, review)
+        validate_review(translation, review)
 
 
 def test_ambiguity_key_is_required_only_for_unresolved_ambiguity() -> None:
@@ -135,4 +135,4 @@ def test_ambiguity_key_is_required_only_for_unresolved_ambiguity() -> None:
     del missing["issues"][0]["ambiguity_key"]
 
     with pytest.raises(ReviewValidationError, match="ambiguity_key"):
-        validate_independent_review(translation, missing)
+        validate_review(translation, missing)

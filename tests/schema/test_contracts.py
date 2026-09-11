@@ -4,11 +4,14 @@
 from __future__ import annotations
 
 import json
+from copy import deepcopy
+from functools import lru_cache
 from pathlib import Path
 
 import pytest
 
 from academic_pdf_en_zh_reader.job.hashing import sha256_canonical
+from academic_pdf_en_zh_reader.qa.api import _GATES as QA_GATES
 from academic_pdf_en_zh_reader.schema.validate import (
     SCHEMA_NAMES,
     SchemaValidationError,
@@ -18,26 +21,14 @@ from academic_pdf_en_zh_reader.schema.validate import (
 
 SHA_A = "a" * 64
 SHA_B = "b" * 64
-QA_GATES = (
-    ("parent.chain", "security"),
-    ("semantic.translation-coverage", "semantic"),
-    ("semantic.independent-review", "semantic"),
-    ("content.annotation-policy", "content"),
-    ("geometry.a3-pages", "geometry"),
-    ("geometry.source-left-one-to-one", "geometry"),
-    ("geometry.mirrored-frames", "geometry"),
-    ("geometry.bounds-and-overlap", "geometry"),
-    ("geometry.leader-policy", "geometry"),
-    ("geometry.continuation-fixed-size", "geometry"),
-    ("font.embedded-tounicode", "font"),
-    ("font.draw-run-binding", "font"),
-    ("font.glyph-coverage", "font"),
-    ("security.active-content-absent", "security"),
-    ("security.no-raster-substitution", "security"),
-    ("render.pdfium-all-pages-144dpi", "render"),
-    ("render.left-visual-equivalence", "render"),
-    ("render.full-page-sanity", "render"),
-)
+
+
+@lru_cache(maxsize=1)
+def _reading_examples():
+    from tests.rendering.test_text_styles import build_render_fixture
+
+    *_, graph, layout = build_render_fixture()
+    return graph, layout
 
 
 def _base(kind: str) -> dict[str, object]:
@@ -45,68 +36,6 @@ def _base(kind: str) -> dict[str, object]:
 
 
 def _examples() -> dict[str, dict[str, object]]:
-    frame_style = {
-        "style_id": "typography-v1:body:body:10000:14500",
-        "semantic_role": "body",
-        "font_role": "body",
-        "size_mpt": 10_000,
-        "line_height_mpt": 14_500,
-    }
-    frame_line = {
-        "index": 0,
-        "target_start": 0,
-        "target_end": 3,
-        "text": "源文。",
-        "style_id": frame_style["style_id"],
-        "width_mpt": 30_000,
-        "line_height_mpt": 14_500,
-        "ascent_mpt": 9_000,
-        "descent_mpt": -2_000,
-        "runs": [
-            {
-                "font_role": "body",
-                "font_name": "APR-body-aaaaaaaaaaaaaaaa",
-                "text": "源文。",
-            }
-        ],
-    }
-    frame_line["line_box_hash"] = sha256_canonical(
-        {"line_box_contract_version": "1.0.0", **frame_line}
-    )
-    frame_lines = [frame_line]
-    frame_sequence_hash = sha256_canonical({"style": frame_style, "lines": frame_lines})
-    continuation_header = {
-        "contract_version": "1.0.0",
-        "text": "译文续页",
-        "style": {
-            "style_id": "typography-v1:auxiliary:body:8600:14620",
-            "semantic_role": "auxiliary",
-            "font_role": "body",
-            "size_mpt": 8_600,
-            "line_height_mpt": 14_620,
-        },
-        "runs": [
-            {
-                "run_index": 0,
-                "text": "译文续页",
-                "font_role": "body",
-                "font_name": "APR-body-aaaaaaaaaaaaaaaa",
-                "x_offset_mpt": 0,
-                "width_mpt": 34_400,
-            }
-        ],
-        "width_mpt": 34_400,
-        "line_height_mpt": 14_620,
-        "ascent_mpt": 7_568,
-        "descent_mpt": -1_032,
-        "top_inset_mpt": 4_000,
-        "gap_after_mpt": 3_000,
-        "reserve_height_mpt": 21_620,
-        "color_token": "muted_gray",
-        "color_hex": "#666666",
-        "horizontal_alignment": "right",
-    }
-    continuation_header["header_hash"] = sha256_canonical(continuation_header)
     examples = {
         "normalization": {
             **_base("normalization"),
@@ -268,278 +197,8 @@ def _examples() -> dict[str, dict[str, object]]:
             "teaching_ratio_basis_points": 300,
             "items": [],
         },
-        "frame-graph": {
-            **_base("frame-graph"),
-            "frame_graph_input_hash": SHA_A,
-            "right_panel_bbox_mpt": [595_276, 0, 1_190_551, 841_890],
-            "font_fingerprint": [
-                {
-                    "role": "body",
-                    "reportlab_name": "APR-body-aaaaaaaaaaaaaaaa",
-                    "sha256": SHA_A,
-                },
-                {
-                    "role": "heading",
-                    "reportlab_name": "APR-heading-bbbbbbbbbbbbbbbb",
-                    "sha256": SHA_B,
-                },
-                {
-                    "role": "symbols",
-                    "reportlab_name": "APR-symbols-aaaaaaaaaaaaaaaa",
-                    "sha256": SHA_A,
-                },
-            ],
-            "flow_spacing": {
-                "config_version": 1,
-                "horizontal_padding_mpt": 4_000,
-                "vertical_padding_mpt": 4_000,
-                "block_gap_mpt": 4_000,
-                "figure_note_gap_mpt": 3_000,
-            },
-            "continuation_header": continuation_header,
-            "pages": [
-                {
-                    "page_number": 1,
-                    "page_height_mpt": 841_890,
-                    "bands": [
-                        {
-                            "id": "fg:p1-band-0:band",
-                            "source_band_id": "p1-band-0",
-                            "band_index": 0,
-                            "preferred_top_offset_mpt": 41_890,
-                            "preferred_bottom_offset_mpt": 801_890,
-                            "initial_unsplit_content_height_mpt": 22_500,
-                            "height_basis": "initial-unsplit-ordinary-flow",
-                            "native_frame_ids": ["p1-right-0"],
-                            "continuation_template_frame_ids": [
-                                "p1-right-0-continuation"
-                            ],
-                            "initial_unsplit_content_item_ids": [
-                                "unit:p1-r0-body-0-12"
-                            ],
-                        }
-                    ],
-                    "frames": [
-                        {
-                            "id": "p1-right-0",
-                            "kind": "native",
-                            "activation": "always",
-                            "bbox_mpt": [635_276, 40_000, 1_150_551, 800_000],
-                            "text_left_mpt": 639_276,
-                            "text_right_mpt": 1_146_551,
-                            "source_page_number": 1,
-                            "source_band_id": "p1-band-0",
-                            "source_column_id": "p1-col-0",
-                            "band_index": 0,
-                            "column_index": 0,
-                            "column_count": 1,
-                            "width_ratio_ppm": 1_000_000,
-                        },
-                        {
-                            "id": "p1-right-0-continuation",
-                            "kind": "continuation-template",
-                            "activation": "candidate",
-                            "bbox_mpt": [635_276, 40_000, 1_150_551, 800_000],
-                            "text_left_mpt": 639_276,
-                            "text_right_mpt": 1_146_551,
-                            "source_page_number": 1,
-                            "source_band_id": "p1-band-0",
-                            "source_column_id": "p1-col-0",
-                            "band_index": 0,
-                            "column_index": 0,
-                            "column_count": 1,
-                            "width_ratio_ppm": 1_000_000,
-                        },
-                    ],
-                }
-            ],
-            "edges": [],
-            "unit_flows": [
-                {
-                    "unit_id": "p1-r0-body-0-12",
-                    "role": "body",
-                    "home_frame_id": "p1-right-0",
-                    "allowed_native_frame_ids": ["p1-right-0"],
-                    "continuation_owner_page_number": 1,
-                    "source_fragment_start": 0,
-                    "source_fragment_end": 1,
-                    "line_count": 1,
-                    "style": frame_style,
-                    "line_sequence_hash": frame_sequence_hash,
-                    "lines": frame_lines,
-                    "legal_breaks": [],
-                    "anchor": {
-                        "kind": "leader",
-                        "source_block_id": "p1-r0-body-0-12",
-                        "source_page_number": 1,
-                        "source_visual_center_offset_mpt": 126_890,
-                        "initial_part_index": 0,
-                    },
-                }
-            ],
-            "unit_parts": [
-                {
-                    "id": "p1-r0-body-0-12:part:0000",
-                    "unit_id": "p1-r0-body-0-12",
-                    "part_index": 0,
-                    "frame_id": "p1-right-0",
-                    "line_start": 0,
-                    "line_end": 1,
-                    "source_fragment_start": 0,
-                    "source_fragment_end": 1,
-                    "is_first_part": True,
-                    "creates_anchor": True,
-                }
-            ],
-            "figure_note_flows": [],
-        },
-        "layout": {
-            **_base("layout"),
-            "solver_contract_version": 1,
-            "solver_input_hash": SHA_A,
-            "frame_graph_input_hash": SHA_A,
-            "frame_graph_hash": SHA_B,
-            "right_panel_bbox_mpt": [595_276, 0, 1_190_551, 841_890],
-            "font_fingerprint": [
-                {
-                    "role": "body",
-                    "reportlab_name": "APR-body-aaaaaaaaaaaaaaaa",
-                    "sha256": SHA_A,
-                },
-                {
-                    "role": "heading",
-                    "reportlab_name": "APR-heading-bbbbbbbbbbbbbbbb",
-                    "sha256": SHA_B,
-                },
-                {
-                    "role": "symbols",
-                    "reportlab_name": "APR-symbols-aaaaaaaaaaaaaaaa",
-                    "sha256": SHA_A,
-                },
-            ],
-            "flow_spacing": {
-                "config_version": 1,
-                "horizontal_padding_mpt": 4_000,
-                "vertical_padding_mpt": 4_000,
-                "block_gap_mpt": 4_000,
-                "figure_note_gap_mpt": 3_000,
-            },
-            "solver_policy": {
-                "version": 1,
-                "band_gap_mpt": 4_000,
-                "min_lines_before_break": 2,
-                "min_lines_after_break": 2,
-                "heading_with_next_lines": 2,
-                "max_window_radius": 512,
-                "max_window_attempts": 8_192,
-                "max_isotonic_items": 512,
-                "max_breakpoints_per_unit": 512,
-                "max_dp_states": 100_000,
-                "max_dp_transitions": 500_000,
-                "max_continuation_distributions": 4_096,
-                "max_continuation_pages_per_source_page": 32,
-                "max_total_continuation_pages": 128,
-            },
-            "solver_trace": {
-                "native_status": "solved",
-                "native_window_and_band_search_exhausted": False,
-                "native_exhaustion_reason": None,
-                "continuation_reason": None,
-                "continuation_page_count": 0,
-                "split_count": 0,
-                "break_quality_cost": 0,
-                "band_height_objective_mpt": [22_500],
-                "native_dp_states": 1,
-                "native_dp_transitions": 1,
-                "selected_dp_states": 1,
-                "selected_dp_transitions": 1,
-                "continuation_distributions_examined": 0,
-                "window_attempts": [],
-                "band_heights": [
-                    {
-                        "output_page_number": 1,
-                        "source_page_number": 1,
-                        "continuation_index": 0,
-                        "source_band_id": "p1-band-0",
-                        "scope_kind": "band",
-                        "diagnostic_initial_unsplit_height_mpt": 22_500,
-                        "actual_content_height_mpt": 22_500,
-                    }
-                ],
-            },
-            "pages": [
-                {
-                    "page_number": 1,
-                    "source_page_number": 1,
-                    "page_kind": "native",
-                    "continuation_index": 0,
-                    "continuation_label": None,
-                    "page_height_mpt": 841_890,
-                    "utilization_basis_points": 5000,
-                    "bands": [
-                        {
-                            "id": "layout:page:0001:band:0000",
-                            "source_band_id": "p1-band-0",
-                            "band_index": 0,
-                            "preferred_top_offset_mpt": 100_000,
-                            "solved_top_offset_mpt": 100_000,
-                            "height_mpt": 22_500,
-                            "bbox_mpt": [
-                                595_276,
-                                719_390,
-                                1_190_551,
-                                741_890,
-                            ],
-                            "frame_ids": ["p1-right-0"],
-                        }
-                    ],
-                    "frames": [
-                        {
-                            "id": "p1-right-0",
-                            "template_frame_id": "p1-right-0",
-                            "native_frame_id": "p1-right-0",
-                            "source_page_number": 1,
-                            "source_band_id": "p1-band-0",
-                            "source_column_id": "p1-col-0",
-                            "band_index": 0,
-                            "column_index": 0,
-                            "column_count": 1,
-                            "width_ratio_ppm": 1_000_000,
-                            "bbox_mpt": [635_276, 719_390, 1_150_551, 741_890],
-                            "text_left_mpt": 639_276,
-                            "text_right_mpt": 1_146_551,
-                        }
-                    ],
-                    "blocks": [
-                        {
-                            "id": "translated-p1-r0-body-0-12",
-                            "content_id": "p1-r0-body-0-12",
-                            "content_kind": "unit",
-                            "unit_id": "p1-r0-body-0-12",
-                            "part_index": 0,
-                            "frame_id": "p1-right-0",
-                            "template_frame_id": "p1-right-0",
-                            "line_start": 0,
-                            "line_end": 1,
-                            "line_sequence_hash": frame_sequence_hash,
-                            "style": frame_style,
-                            "preferred_top_offset_mpt": 104_000,
-                            "solved_top_offset_mpt": 104_000,
-                            "creates_anchor": True,
-                            "bbox_mpt": [639_276, 723_390, 669_276, 737_890],
-                            "lines": [
-                                {
-                                    **frame_line,
-                                    "x_mpt": 639_276,
-                                    "baseline_y_mpt": 728_890,
-                                }
-                            ],
-                        }
-                    ],
-                    "dashed_leaders": [],
-                }
-            ],
-        },
+        "frame-graph": deepcopy(_reading_examples()[0]),
+        "layout": deepcopy(_reading_examples()[1]),
         "render-manifest": {
             **_base("render-manifest"),
             "render_manifest_version": 2,
@@ -552,7 +211,7 @@ def _examples() -> dict[str, dict[str, object]]:
             "frame_graph_hash": SHA_A,
             "layout_hash": SHA_A,
             "render_style": {
-                "version": 1,
+                "version": 2,
                 "colors": {
                     "body": "#111111",
                     "dark_red": "#7F1D1D",
@@ -564,13 +223,6 @@ def _examples() -> dict[str, dict[str, object]]:
                     "version": 1,
                     "offset_mpt": -1_000,
                     "thickness_mpt": 500,
-                },
-                "leader": {
-                    "version": 1,
-                    "color_hex": "#9A9A9A",
-                    "dash_mpt": [4_000, 3_000],
-                    "width_mpt": 1_000,
-                    "clearance_mpt": 1_500,
                 },
             },
             "render_style_hash": SHA_A,
@@ -617,9 +269,6 @@ def _examples() -> dict[str, dict[str, object]]:
                 "max_lines": 1_000_000,
                 "max_characters": 20_000_000,
                 "max_draw_runs": 2_000_000,
-                "max_source_obstacles": 2_000_000,
-                "max_leaders": 4_096,
-                "max_leader_collision_checks": 5_000_000,
             },
             "overlay_plan_limits_hash": SHA_A,
             "overlay_pdf_sha256": SHA_A,
@@ -774,16 +423,6 @@ def _examples() -> dict[str, dict[str, object]]:
             "receipt_hash": SHA_A,
         },
     }
-    layout = examples["layout"]
-    layout["solver_input_hash"] = sha256_canonical(
-        {
-            "solver_contract_version": "1.0.0",
-            "frame_graph_input_hash": layout["frame_graph_input_hash"],
-            "frame_graph_hash": layout["frame_graph_hash"],
-            "flow_spacing": layout["flow_spacing"],
-            "solver_policy": layout["solver_policy"],
-        }
-    )
     receipt = examples["finalization-receipt"]
     receipt["receipt_hash"] = sha256_canonical(
         {key: value for key, value in receipt.items() if key != "receipt_hash"}
@@ -821,7 +460,9 @@ def test_every_required_contract_is_versioned_and_validates() -> None:
     for name, instance in examples.items():
         schema = load_schema(name)
         assert schema["$schema"] == "https://json-schema.org/draft/2020-12/schema"
-        assert schema["$id"] == (f"urn:academic-pdf-en-zh-reader:schema:{name}:1.0.0")
+        assert schema["$id"] == (
+            f"urn:academic-pdf-en-zh-reader:schema:{name}:{instance['schema_version']}"
+        )
         assert not [ref for ref in _iter_refs(schema) if not str(ref).startswith("#")]
         validate_artifact(name, instance)
 
@@ -842,7 +483,7 @@ def test_schema_files_are_real_json_and_declared_set_is_exact() -> None:
 @pytest.mark.parametrize("name", sorted(_examples()))
 def test_contracts_fail_closed_on_wrong_version_and_unknown_fields(name: str) -> None:
     wrong_version = _examples()[name]
-    wrong_version["schema_version"] = "2.0.0"
+    wrong_version["schema_version"] = "99.0.0"
     with pytest.raises(SchemaValidationError):
         validate_artifact(name, wrong_version)
 

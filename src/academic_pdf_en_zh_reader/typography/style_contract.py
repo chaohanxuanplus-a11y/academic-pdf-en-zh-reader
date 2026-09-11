@@ -10,9 +10,9 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from statistics import median
 
-STYLE_CONTRACT_VERSION = 1
+STYLE_CONTRACT_VERSION = 2
 AUXILIARY_MIN_SIZE_MPT = 7_000
-BODY_LINE_HEIGHT_NUMERATOR = 170
+BODY_LINE_HEIGHT_NUMERATOR = 130
 BODY_LINE_HEIGHT_DENOMINATOR = 100
 
 
@@ -114,11 +114,11 @@ def build_style_contract(
 ) -> TypographyStyleContract:
     """Build the v1 calibrated role map from English body evidence once."""
 
-    body = detect_body_size_mpt(body_samples)
+    body = 10_000
     title = _rounded_ratio(body, 160)
     heading = _rounded_ratio(body, 120)
     caption = max(_rounded_ratio(body, 92), AUXILIARY_MIN_SIZE_MPT)
-    auxiliary = max(_rounded_ratio(body, 86), AUXILIARY_MIN_SIZE_MPT)
+    auxiliary = 9_000
     body_style = _style("body", body)
     styles = (
         ("body", body_style),
@@ -128,6 +128,7 @@ def build_style_contract(
         ("heading", _style("heading", heading)),
         ("figure-caption", _style("body", caption)),
         ("table-caption", _style("body", caption)),
+        ("footnote", _style("body", caption)),
         ("auxiliary", _style("body", auxiliary)),
     )
     return TypographyStyleContract(

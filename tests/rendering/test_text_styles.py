@@ -28,8 +28,6 @@ from academic_pdf_en_zh_reader.layout.annotation_adapter import (
 )
 from academic_pdf_en_zh_reader.layout.solver import solve_layout
 from academic_pdf_en_zh_reader.rendering.contracts import (
-    FrozenContinuationHeader,
-    FrozenContinuationLabel,
     OverlayPlanError,
     OverlayPlanLimits,
 )
@@ -533,7 +531,9 @@ def test_hard_newline_whitespace_and_label_only_lines_keep_complete_mapping() ->
 
     plan = build_overlay_plan(source, graph, layout, annotations)
     flow = graph["unit_flows"][0]
-    bindings = plan["pages"][0]["line_bindings"]
+    bindings = [
+        b for b in plan["pages"][0]["line_bindings"] if b["content_kind"] == "unit"
+    ]
 
     assert bindings[0]["composite_start"] == 0
     assert bindings[-1]["composite_end"] == flow["composite_length"]
@@ -634,7 +634,7 @@ def test_parent_source_and_complexity_tamper_fail_closed() -> None:
     tampered_source["pages"][0]["blocks"][0]["first_line_bbox_mpt"][0] += 1
     with pytest.raises(OverlayPlanError) as source_error:
         build_overlay_plan(tampered_source, graph, layout, annotations)
-    assert source_error.value.code == "SOURCE_ANCHOR_MISMATCH"
+    assert source_error.value.code == "SOURCE_PARENT_MISMATCH"
 
     with pytest.raises(OverlayPlanError) as complexity_error:
         build_overlay_plan(
@@ -673,9 +673,9 @@ def test_annotation_projection_and_source_replacement_are_bound() -> None:
             tampered_layout,
             annotations,
         )
-    assert caught.value.code == "ANNOTATION_PROJECTION_MISMATCH"
+    assert caught.value.code == "LAYOUT_PARENT_MISMATCH"
 
-    original = build_overlay_plan(source, graph, layout, annotations)
+    build_overlay_plan(source, graph, layout, annotations)
     replacement = deepcopy(source)
     replacement["pages"][0]["graphic_nodes"].append(
         {
@@ -685,121 +685,5 @@ def test_annotation_projection_and_source_replacement_are_bound() -> None:
             "confidence_ppm": 990_000,
         }
     )
-    replaced = build_overlay_plan(replacement, graph, layout, annotations)
-    assert replaced["source_hash"] != original["source_hash"]
-    assert (
-        replaced["pages"][0]["source_obstacles_hash"]
-        != (original["pages"][0]["source_obstacles_hash"])
-    )
-
-
-def test_continuation_object_is_exact_and_legacy_boolean_fails() -> None:
-    fixture = build_render_fixture(
-        chinese_text="甲。" * 1_500,
-        include_red=False,
-        include_ambiguity=False,
-        include_auxiliary=False,
-    )
-    source, _units, _translation, _review, annotations, graph, layout = fixture
-    continuation_pages = [
-        page for page in layout["pages"] if page["page_kind"] == "continuation"
-    ]
-    assert continuation_pages
-    assert all(
-        isinstance(page["continuation_label"], dict) for page in continuation_pages
-    )
-
-    header = FrozenContinuationHeader.from_mapping(graph["continuation_header"])
-    plan = build_overlay_plan(source, graph, layout, annotations)
-    assert plan["continuation_header_hash"] == header.header_hash
-    for layout_page in continuation_pages:
-        page_plan = next(
-            page
-            for page in plan["pages"]
-            if page["page_number"] == layout_page["page_number"]
-        )
-        label = FrozenContinuationLabel.from_mapping(layout_page["continuation_label"])
-        assert page_plan["continuation_label"] == label.to_mapping()
-        label_runs = [
-            run
-            for run in page_plan["draw_runs"]
-            if run["content_kind"] == "continuation-label"
-        ]
-        assert label_runs
-        assert "".join(run["text"] for run in label_runs) == label.text
-        assert {run["color_token"] for run in label_runs} == {"muted_gray"}
-        assert {run["color_hex"] for run in label_runs} == {"#666666"}
-        assert label_runs[0]["x_mpt"] == label.x_mpt
-        assert all(run["baseline_y_mpt"] == label.baseline_y_mpt for run in label_runs)
-
-    legacy_layout = deepcopy(layout)
-    legacy_layout["pages"][1]["continuation_label"] = True
-    with pytest.raises(OverlayPlanError) as caught:
-        build_overlay_plan(source, graph, legacy_layout, annotations)
-    assert caught.value.code == "CONTINUATION_LABEL_NOT_FROZEN"
-
-    style = {
-        "style_id": "typography-v1:auxiliary:body:8600:14620",
-        "semantic_role": "auxiliary",
-        "font_role": "body",
-        "size_mpt": 8_600,
-        "line_height_mpt": 14_620,
-    }
-    runs = [
-        {
-            "run_index": 0,
-            "text": "译文续页",
-            "font_role": "body",
-            "font_name": graph["font_fingerprint"][0]["reportlab_name"],
-            "x_offset_mpt": 0,
-            "width_mpt": 34_400,
-        }
-    ]
-    raw_header = {
-        "contract_version": "1.0.0",
-        "text": "译文续页",
-        "style": style,
-        "runs": runs,
-        "width_mpt": 34_400,
-        "line_height_mpt": 14_620,
-        "ascent_mpt": 7_568,
-        "descent_mpt": -1_032,
-        "top_inset_mpt": 4_000,
-        "gap_after_mpt": 3_000,
-        "reserve_height_mpt": 21_620,
-        "color_token": "muted_gray",
-        "color_hex": "#666666",
-        "horizontal_alignment": "right",
-    }
-    raw_header["header_hash"] = sha256_canonical(raw_header)
-    assert FrozenContinuationHeader.from_mapping(raw_header).to_mapping() == raw_header
-    bool_tamper = deepcopy(raw_header)
-    bool_tamper["runs"][0]["run_index"] = False
-    bool_tamper["header_hash"] = sha256_canonical(
-        {key: value for key, value in bool_tamper.items() if key != "header_hash"}
-    )
-    with pytest.raises(OverlayPlanError) as bool_error:
-        FrozenContinuationHeader.from_mapping(bool_tamper)
-    assert bool_error.value.code == "CONTINUATION_HEADER_INVALID"
-
-    raw = {
-        "contract_version": "1.0.0",
-        "header_hash": raw_header["header_hash"],
-        "source_page_number": 1,
-        "continuation_index": 1,
-        "text": "译文续页",
-        "style": style,
-        "runs": runs,
-        "width_mpt": 34_400,
-        "line_height_mpt": 14_620,
-        "ascent_mpt": 7_568,
-        "descent_mpt": -1_032,
-        "color_token": "muted_gray",
-        "color_hex": "#666666",
-        "x_mpt": 1_152_151,
-        "baseline_y_mpt": 830_322,
-        "bbox_mpt": [1_152_151, 829_290, 1_186_551, 837_890],
-    }
-    raw["label_hash"] = sha256_canonical(raw)
-    label = FrozenContinuationLabel.from_mapping(raw)
-    assert label.to_mapping() == raw
+    with pytest.raises(OverlayPlanError, match="source differs"):
+        build_overlay_plan(replacement, graph, layout, annotations)

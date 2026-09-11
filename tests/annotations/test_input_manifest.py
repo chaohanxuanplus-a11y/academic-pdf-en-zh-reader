@@ -42,7 +42,24 @@ def _manifest(
         "review_hash": sha256_canonical(review),
         "red_candidates": [],
         "ambiguity_occurrences": [],
-        "teaching_candidates": [],
+        "teaching_candidates": [
+            {
+                "key": "core-vocabulary",
+                "english_original": units["units"][0]["source_text"],
+                "chinese_meaning": "上下文核心词汇",
+                "value_priority": 90,
+                "essential": True,
+                "occurrences": [
+                    {
+                        "unit_id": units["units"][0]["id"],
+                        "source_start": 0,
+                        "source_end": len(units["units"][0]["source_text"]),
+                        "target_start": 0,
+                        "target_end": 1,
+                    }
+                ],
+            }
+        ],
         "figure_candidates": [],
     }
 
@@ -117,21 +134,14 @@ def _bounded_candidate(field: str) -> dict[str, object]:
     }
 
 
-def test_empty_candidate_arrays_are_a_valid_frozen_input() -> None:
+def test_empty_core_vocabulary_is_rejected():
     units, translation, review = make_bundle([("body", "result", "结果")])
-
-    adapted = adapt_semantic_candidate_manifest(
-        units,
-        translation,
-        review,
-        _manifest(units, translation, review),
-        style_contract=_style(),
-    )
-
-    assert adapted.mandatory_items == ()
-    assert adapted.candidate_set.teaching_candidates == ()
-    assert adapted.candidate_set.figure_candidates == ()
-    assert len(adapted.candidate_set.candidate_set_hash) == 64
+    manifest = _manifest(units, translation, review)
+    manifest["teaching_candidates"] = []
+    with pytest.raises(SemanticCandidateManifestError, match="CORE_VOCABULARY_MISSING"):
+        adapt_semantic_candidate_manifest(
+            units, translation, review, manifest, style_contract=_style()
+        )
 
 
 @pytest.mark.parametrize(

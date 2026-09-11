@@ -19,6 +19,31 @@ from academic_pdf_en_zh_reader.security.limits import WorkerLimits
 from academic_pdf_en_zh_reader.security.worker_protocol import WorkerRequest
 
 
+def test_extraction_diagnostic_reports_code_location_not_private_content() -> None:
+    from academic_pdf_en_zh_reader.extraction.page_objects import _mpt
+
+    private_text = "PRIVATE_PAPER_CONTENT_DO_NOT_LOG"
+    try:
+        _mpt(private_text)
+    except Exception as error:
+        summary = windows_worker._extraction_failure_summary(error)
+    else:
+        pytest.fail("synthetic invalid coordinate should fail")
+    assert "InvalidOperation" in summary
+    assert "page_objects:" in summary
+    assert private_text not in summary
+    assert str(Path(__file__).parents[2]) not in summary
+    assert len(summary) <= 512
+
+
+def test_extraction_diagnostic_does_not_echo_arbitrary_exception_names() -> None:
+    error_type = type("PRIVATE_CUSTOM_EXCEPTION", (Exception,), {})
+    summary = windows_worker._extraction_failure_summary(
+        error_type("PRIVATE_PAPER_CONTENT_DO_NOT_LOG")
+    )
+    assert "PRIVATE" not in summary
+
+
 def _reported_error(code: str):
     def fail(*_args: object, **_kwargs: object) -> None:
         raise windows_worker.WorkerReportedError(code, "worker detail")

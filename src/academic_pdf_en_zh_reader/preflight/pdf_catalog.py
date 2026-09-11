@@ -297,6 +297,11 @@ def _color_components(
         return None
     nested_seen = seen | {identity}
     family = str(family_object)
+    if family in {"/DeviceGray", "/DeviceRGB", "/DeviceCMYK"}:
+        if len(value) != 1:
+            facts.reject("MALFORMED_COLOR_SPACE", "device color space is invalid")
+            return None
+        return _INHERENT_COLOR_SPACES[family]
     if family in {"/CalGray", "/CalRGB", "/Lab"}:
         if len(value) != 2 or not isinstance(_resolved(value[1]), DictionaryObject):
             facts.reject("MALFORMED_COLOR_SPACE", "calibrated color space is invalid")
@@ -378,7 +383,13 @@ def _color_components(
                 facts.reject("MALFORMED_COLOR_SPACE", "ICCBased alternate is invalid")
                 return None
         return components
-    facts.reject("MALFORMED_COLOR_SPACE", "color-space family is unsupported")
+    # Report only fixed known family names, never arbitrary PDF strings.
+    detail = {
+        "/Pattern": "Pattern color space cannot describe image samples",
+        "/I": "abbreviated Indexed color-space family is unsupported",
+        "/CalCMYK": "legacy CalCMYK color-space family is unsupported",
+    }.get(family, "color-space family is unsupported")
+    facts.reject("MALFORMED_COLOR_SPACE", detail)
     return None
 
 
@@ -563,6 +574,21 @@ def _inline_aliases(page: PageObject, facts: CatalogFacts) -> DictionaryObject |
         for key, value in color_spaces.items():
             if not isinstance(key, NameObject):
                 raise TypeError
+            value = _resolved(value)
+            if isinstance(value, NameObject) and value == "/Pattern":
+                continue
+            if (
+                isinstance(value, ArrayObject)
+                and value
+                and isinstance(_resolved(value[0]), NameObject)
+                and _resolved(value[0]) == NameObject("/Pattern")
+            ):
+                # Page painting resources may use Pattern; image samples may not.
+                if len(value) == 2:
+                    _color_components(value[1], facts, aliases=color_spaces)
+                elif len(value) != 1:
+                    facts.reject("MALFORMED_COLOR_SPACE", "Pattern resource is invalid")
+                continue
             _color_components(value, facts, aliases=color_spaces)
         return color_spaces
     except Exception:

@@ -19,7 +19,7 @@ from academic_pdf_en_zh_reader.topology.projection import (
 from academic_pdf_en_zh_reader.topology.xy_cut import vertical_xy_cut
 
 _MINIMUM_GUTTER_MPT = 12_000
-_MINIMUM_HORIZONTAL_GAP_MPT = 12_000
+_MINIMUM_HORIZONTAL_GAP_MPT = 6_000
 _MAX_COLUMNS = 3
 _DOCUMENT_TEMPLATE_MIN_SCORE_PPM = 800_000
 
@@ -434,18 +434,29 @@ def _detect_page_bands(
         )
 
     crop_width = crop[2] - crop[0]
-    crop_height = crop[3] - crop[1]
     minimum_gutter = max(_MINIMUM_GUTTER_MPT, crop_width * 2 // 100)
+    typical_font = sorted(
+        item.font_size_mpt for item in boxes if item.font_size_mpt > 0
+    )
+    median_font = typical_font[len(typical_font) // 2] if typical_font else 10_000
     minimum_horizontal_gap = max(
         _MINIMUM_HORIZONTAL_GAP_MPT,
-        crop_height // 100,
+        median_font * 3 // 4,
     )
     content = union_box(boxes)
     wide_threshold = (content[2] - content[0]) * 52 // 100
     nonwide = tuple(
         item for item in boxes if item.bbox_mpt[2] - item.bbox_mpt[0] < wide_threshold
     )
-    anchor_source = nonwide or boxes
+    # Column starts need line-length evidence; small formula fragments and
+    # individual panel edges are occupancy, not independent column anchors.
+    substantial_lines = tuple(
+        item
+        for item in nonwide
+        if item.kind == "line"
+        and item.bbox_mpt[2] - item.bbox_mpt[0] >= median_font * 6
+    )
+    anchor_source = substantial_lines or nonwide or boxes
     anchor_tolerance = max(12_000, crop_width * 25 // 1_000)
     anchors = document_anchors or _cluster_anchors(
         anchor_source,
@@ -454,6 +465,26 @@ def _detect_page_bands(
     )
     global_count = max(1, len(anchors))
 
+    # A first-page title-to-abstract front matter region is spanning even when
+    # affiliation superscripts split the author row into several text segments.
+    # Require both an explicit abstract label and a clearly larger wide title.
+    abstract_tops = [
+        line["bbox_mpt"][3]
+        for line in page.get("lines", ())
+        if isinstance(line.get("text"), str)
+        and line["text"].strip().casefold().startswith(("abstract:", "abstract "))
+    ]
+    front_bottom = max(abstract_tops, default=crop[3])
+    title_tops = [
+        item.bbox_mpt[3]
+        for item in boxes
+        if item.kind == "line"
+        and item.bbox_mpt[1] > front_bottom
+        and item.font_size_mpt * 4 >= median_font * 5
+        and item.bbox_mpt[2] - item.bbox_mpt[0] >= wide_threshold
+    ]
+    front_top = max(title_tops, default=0) if page_number == 1 else 0
+
     raw_groups = _horizontal_groups(boxes, minimum_horizontal_gap)
     groups: list[_HorizontalGroup] = []
     observed_column_count = global_count
@@ -461,6 +492,13 @@ def _detect_page_bands(
         barrier = any(
             item.bbox_mpt[2] - item.bbox_mpt[0] >= wide_threshold for item in members
         )
+        if front_top > front_bottom and all(
+            item.kind == "line"
+            and front_bottom <= item.bbox_mpt[1] < item.bbox_mpt[3] <= front_top
+            for item in members
+        ):
+            group_box = union_box(members)
+            barrier = barrier or group_box[2] - group_box[0] >= wide_threshold
         cut = vertical_xy_cut(members, minimum_gutter_mpt=minimum_gutter)
         observed_column_count = max(observed_column_count, len(cut.regions))
         cut_count = min(_MAX_COLUMNS, len(cut.regions))
@@ -550,7 +588,7 @@ def _detect_page_bands(
                 column_count,
                 anchors,
                 minimum_gutter,
-                anchor_tolerance if document_anchors else None,
+                anchor_tolerance,
             )
             column_count = len(columns)
             evidence = (

@@ -16,8 +16,6 @@ path = [
   "compliance/python-runtime.json",
   "compliance/python-dependencies.json",
   "compliance/release-status.json",
-  "docs/superpowers/plans/2026-08-27-academic-pdf-bilingual-reader-implementation-plan.md",
-  "docs/superpowers/specs/2026-08-27-academic-pdf-bilingual-reader-skill-design.md",
   "tests/visual/expected/.gitkeep",
   "uv.lock",
 ]

@@ -420,7 +420,7 @@ def test_receipt_rejects_synchronized_one_mpt_layout_tamper() -> None:
 
 def test_resume_from_annotations_or_earlier_must_rerun_finalizer() -> None:
     assert resume_must_run_finalizer(JobStage.INITIALIZED)
-    assert resume_must_run_finalizer(JobStage.INDEPENDENTLY_REVIEWED)
+    assert resume_must_run_finalizer(JobStage.REVIEWED)
     assert resume_must_run_finalizer(JobStage.ANNOTATED)
     assert not resume_must_run_finalizer(JobStage.LAID_OUT)
     assert "annotations" not in signature(finalize_annotations_and_layout).parameters
@@ -448,7 +448,7 @@ def test_annotated_resume_rejects_candidate_change_instead_of_mixing_ledgers() -
             "units": sha256_canonical(units),
         },
         JobStage.TRANSLATED: {"translation": sha256_canonical(translation)},
-        JobStage.INDEPENDENTLY_REVIEWED: {"review": sha256_canonical(review)},
+        JobStage.REVIEWED: {"review": sha256_canonical(review)},
         JobStage.ANNOTATED: {"annotations": sha256_canonical(original.annotations)},
     }
     state = create_job(
@@ -529,7 +529,7 @@ def test_resume_rejects_pdf_identity_separate_from_the_artifact_ledger() -> None
         ),
         (JobStage.TRANSLATED, {"translation": sha256_canonical(translation)}),
         (
-            JobStage.INDEPENDENTLY_REVIEWED,
+            JobStage.REVIEWED,
             {"review": sha256_canonical(review)},
         ),
     )

@@ -14,7 +14,6 @@ from reportlab.pdfbase import pdfmetrics
 from academic_pdf_en_zh_reader.job.hashing import sha256_canonical
 from academic_pdf_en_zh_reader.rendering.branding import validate_brand_block
 from academic_pdf_en_zh_reader.rendering.contracts import (
-    FrozenContinuationLabel,
     OverlayPlanError,
 )
 
@@ -485,12 +484,9 @@ def _validate_frozen_page(page_plan: Mapping[str, object]) -> None:
         "continuation_index",
         "continuation_label",
         "brand_block",
-        "source_obstacle_count",
-        "source_obstacles_hash",
         "line_bindings",
         "draw_runs",
         "underlines",
-        "leader_routes",
         "page_plan_hash",
     }
     if set(page_plan) != required:
@@ -505,65 +501,27 @@ def _validate_frozen_page(page_plan: Mapping[str, object]) -> None:
     if not isinstance(draw_runs, list) or not isinstance(underlines, list):
         raise OverlayPlanError("PLAN_TAMPERED", "page drawing lists are invalid")
     line_bindings = page_plan["line_bindings"]
-    leader_routes = page_plan["leader_routes"]
-    if not isinstance(line_bindings, list) or not isinstance(leader_routes, list):
-        raise OverlayPlanError("PLAN_TAMPERED", "page plan lists are invalid")
-    raw_label = page_plan["continuation_label"]
+    if not isinstance(line_bindings, list):
+        raise OverlayPlanError("PLAN_TAMPERED", "invalid line bindings")
+    if page_plan["continuation_label"] is not None:
+        raise OverlayPlanError(
+            "PLAN_TAMPERED", "continuous pages have no continuation label"
+        )
     brand_block = validate_brand_block(page_plan["brand_block"])
-    if brand_block is not None and page_plan["page_kind"] not in {
-        "native",
-        "disclaimer",
-    }:
-        raise OverlayPlanError("PLAN_TAMPERED", "brand block page kind is invalid")
     if page_plan["page_kind"] == "native":
-        if raw_label is not None or page_plan["continuation_index"] != 0:
-            raise OverlayPlanError("PLAN_TAMPERED", "native page label is invalid")
-    elif page_plan["page_kind"] == "continuation":
-        if not isinstance(raw_label, Mapping):
-            raise OverlayPlanError(
-                "PLAN_TAMPERED",
-                "continuation page label is not frozen",
-            )
-        try:
-            label = FrozenContinuationLabel.from_mapping(raw_label)
-        except OverlayPlanError as exc:
-            raise OverlayPlanError(
-                "PLAN_TAMPERED",
-                "continuation label is invalid",
-            ) from exc
         if (
-            label.source_page_number != page_plan["source_page_number"]
-            or label.continuation_index != page_plan["continuation_index"]
+            page_plan["source_page_number"] != page_plan["page_number"]
+            or page_plan["continuation_index"] != 0
         ):
-            raise OverlayPlanError(
-                "PLAN_TAMPERED",
-                "continuation label page binding is invalid",
-            )
-    elif page_plan["page_kind"] == "disclaimer":
+            raise OverlayPlanError("PLAN_TAMPERED", "invalid source page order")
+    elif page_plan["page_kind"] == "continuation":
         if (
             page_plan["source_page_number"] is not None
-            or raw_label is not None
-            or page_plan["continuation_index"] != 0
-            or brand_block is None
-            or page_plan["source_obstacle_count"] != 0
-            or page_plan["source_obstacles_hash"] != sha256_canonical([])
-            or underlines
-            or leader_routes
-            or any(
-                not isinstance(run, Mapping) or run.get("content_kind") != "brand"
-                for run in draw_runs
-            )
-            or any(
-                not isinstance(binding, Mapping)
-                or binding.get("content_kind") != "brand"
-                for binding in line_bindings
-            )
+            or page_plan["continuation_index"] < 1
         ):
-            raise OverlayPlanError(
-                "PLAN_TAMPERED", "disclaimer page binding is invalid"
-            )
+            raise OverlayPlanError("PLAN_TAMPERED", "invalid additional page")
     else:
-        raise OverlayPlanError("PLAN_TAMPERED", "page kind is invalid")
+        raise OverlayPlanError("PLAN_TAMPERED", "invalid page kind")
     for binding in line_bindings:
         if not isinstance(binding, Mapping) or binding.get(
             "line_binding_hash"
@@ -662,17 +620,9 @@ def _validate_frozen_page(page_plan: Mapping[str, object]) -> None:
             )
         ):
             raise OverlayPlanError("PLAN_TAMPERED", "underline is invalid")
-    for route in leader_routes:
-        if not isinstance(route, Mapping) or route.get(
-            "route_hash"
-        ) != sha256_canonical(
-            {key: value for key, value in route.items() if key != "route_hash"}
-        ):
-            raise OverlayPlanError("PLAN_TAMPERED", "leader route is invalid")
     brand_runs = [run for run in draw_runs if run.get("content_kind") == "brand"]
     if (brand_block is None and brand_runs) or (
-        brand_block is not None
-        and len(brand_runs) != int(brand_block["text_run_count"])
+        brand_block is not None and len(brand_runs) != brand_block["text_run_count"]
     ):
         raise OverlayPlanError("PLAN_TAMPERED", "brand text binding is invalid")
 

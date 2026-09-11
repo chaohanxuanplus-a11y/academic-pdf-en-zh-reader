@@ -33,7 +33,7 @@ def test_translation_gate_requires_two_independent_roles(
     with pytest.raises(CliStageError) as raised:
         validate_translation_stage(state, units, translation, review)
 
-    assert raised.value.code == "INDEPENDENT_REVIEW_REQUIRED"
+    assert raised.value.code == "REVIEW_REQUIRED"
 
 
 def test_translation_gate_requires_the_exact_translated_stage(
@@ -86,7 +86,7 @@ def test_cli_failure_is_nonzero_structured_and_path_free(
     assert result != 0
     assert captured.out == ""
     error = json.loads(captured.err)
-    assert error["error"]["code"] == "INDEPENDENT_REVIEW_REQUIRED"
+    assert error["error"]["code"] == "REVIEW_REQUIRED"
     assert "private-secret" not in captured.err
     assert "Alpha protein" not in captured.err
 
@@ -156,7 +156,7 @@ def test_layout_stage_consumes_only_the_frozen_annotated_chain(
         "selection_hash": "f" * 64,
     }
     for stage, hashes in (
-        (JobStage.INDEPENDENTLY_REVIEWED, {"review": sha256_canonical(review)}),
+        (JobStage.REVIEWED, {"review": sha256_canonical(review)}),
         (JobStage.ANNOTATED, {"annotations": sha256_canonical(annotations)}),
     ):
         state = advance_job(

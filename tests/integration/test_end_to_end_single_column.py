@@ -63,7 +63,7 @@ def _rendered_state(
         ),
         (JobStage.TRANSLATED, {"translation": sha256_canonical(case.translation)}),
         (
-            JobStage.INDEPENDENTLY_REVIEWED,
+            JobStage.REVIEWED,
             {"review": sha256_canonical(case.review)},
         ),
         (
@@ -143,7 +143,7 @@ def test_single_column_full_chain_delivers_only_the_validated_pdf(
         render_manifest=manifest,
         expected_render_manifest_hash=sha256_canonical(manifest),
     )
-    assert qa_commit.code == "QA_VALIDATED"
+    assert qa_commit.code == "QA_VALIDATED", qa_commit.failure_codes
     assert qa_commit.passed is True
     validated_state = load_job_state(state_path)
     assert validated_state.stage is JobStage.VALIDATED

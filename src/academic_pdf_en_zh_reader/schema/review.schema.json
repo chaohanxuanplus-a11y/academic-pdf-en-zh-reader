@@ -1,54 +1,173 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "urn:academic-pdf-en-zh-reader:schema:review:1.0.0",
-  "title": "Independent translation review",
+  "title": "Translation review scope and findings",
   "x-spdx-copyright": "2026 academic-pdf-en-zh-reader contributors",
   "x-spdx-license-identifier": "Apache-2.0",
   "type": "object",
   "additionalProperties": false,
-  "required": ["schema_version", "artifact_kind", "translation_hash", "reviewer_role", "translator_id", "reviewer_id", "reviewed_unit_ids", "issues", "final_status"],
+  "required": [
+    "schema_version",
+    "artifact_kind",
+    "translation_hash",
+    "reviewer_role",
+    "translator_id",
+    "reviewer_id",
+    "reviewed_unit_ids",
+    "issues",
+    "final_status"
+  ],
   "properties": {
-    "schema_version": {"const": "1.0.0"},
-    "artifact_kind": {"const": "review"},
-    "translation_hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
-    "reviewer_role": {"const": "independent"},
-    "translator_id": {"type": "string", "minLength": 1},
-    "reviewer_id": {"type": "string", "minLength": 1},
+    "schema_version": {
+      "const": "1.0.0"
+    },
+    "artifact_kind": {
+      "const": "review"
+    },
+    "translation_hash": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "reviewer_role": {
+      "enum": [
+        "targeted",
+        "independent"
+      ]
+    },
+    "translator_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "reviewer_id": {
+      "type": "string",
+      "minLength": 1
+    },
     "reviewed_unit_ids": {
       "type": "array",
       "uniqueItems": true,
-      "items": {"type": "string", "minLength": 1}
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
     },
-    "final_status": {"enum": ["passed", "failed"]},
+    "final_status": {
+      "enum": [
+        "passed",
+        "failed"
+      ]
+    },
     "issues": {
       "type": "array",
       "items": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["id", "unit_id", "severity", "status", "message"],
+        "required": [
+          "id",
+          "unit_id",
+          "severity",
+          "status",
+          "message"
+        ],
         "properties": {
-          "id": {"type": "string", "minLength": 1},
-          "unit_id": {"type": "string", "minLength": 1},
-          "severity": {"enum": ["hard_error", "style_improvement", "unresolved_ambiguity"]},
-          "status": {"enum": ["resolved", "unresolved"]},
-          "message": {"type": "string", "minLength": 1},
-          "resolution": {"type": ["string", "null"]},
-          "style_improvement": {"$ref": "#/$defs/style_improvement"},
-          "ambiguity_key": {"$ref": "#/$defs/ambiguity_key"}
+          "id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "unit_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "severity": {
+            "enum": [
+              "hard_error",
+              "style_improvement",
+              "unresolved_ambiguity"
+            ]
+          },
+          "status": {
+            "enum": [
+              "resolved",
+              "unresolved"
+            ]
+          },
+          "message": {
+            "type": "string",
+            "minLength": 1
+          },
+          "resolution": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "style_improvement": {
+            "$ref": "#/$defs/style_improvement"
+          },
+          "ambiguity_key": {
+            "$ref": "#/$defs/ambiguity_key"
+          }
         },
         "allOf": [
           {
-            "if": {"properties": {"severity": {"const": "style_improvement"}}},
-            "then": {"required": ["style_improvement"]}
+            "if": {
+              "properties": {
+                "severity": {
+                  "const": "style_improvement"
+                }
+              }
+            },
+            "then": {
+              "required": [
+                "style_improvement"
+              ]
+            }
           },
           {
-            "if": {"properties": {"severity": {"const": "unresolved_ambiguity"}}},
+            "if": {
+              "properties": {
+                "severity": {
+                  "const": "unresolved_ambiguity"
+                }
+              }
+            },
             "then": {
-              "required": ["ambiguity_key"],
-              "properties": {"status": {"const": "unresolved"}}
+              "required": [
+                "ambiguity_key"
+              ],
+              "properties": {
+                "status": {
+                  "const": "unresolved"
+                }
+              }
             }
           }
         ]
+      }
+    },
+    "mechanical_resolutions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "issue_hash",
+          "unit_id",
+          "reason"
+        ],
+        "properties": {
+          "issue_hash": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "unit_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "reason": {
+            "type": "string",
+            "minLength": 8
+          }
+        }
       }
     }
   },
@@ -56,32 +175,67 @@
     "style_improvement": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["current_chinese", "suggested_chinese", "rationale"],
+      "required": [
+        "current_chinese",
+        "suggested_chinese",
+        "rationale"
+      ],
       "properties": {
-        "current_chinese": {"type": "string", "minLength": 1},
-        "suggested_chinese": {"type": "string", "minLength": 1},
-        "rationale": {"type": "string", "minLength": 1}
+        "current_chinese": {
+          "type": "string",
+          "minLength": 1
+        },
+        "suggested_chinese": {
+          "type": "string",
+          "minLength": 1
+        },
+        "rationale": {
+          "type": "string",
+          "minLength": 1
+        }
       }
     },
     "ambiguity_key": {
       "type": "object",
       "additionalProperties": false,
       "required": [
-        "id", "english_expression", "syntactic_structure",
-        "candidate_meanings", "disciplinary_context", "ambiguity_reason"
+        "id",
+        "english_expression",
+        "syntactic_structure",
+        "candidate_meanings",
+        "disciplinary_context",
+        "ambiguity_reason"
       ],
       "properties": {
-        "id": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
-        "english_expression": {"type": "string", "minLength": 2},
-        "syntactic_structure": {"type": "string", "minLength": 4},
+        "id": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "english_expression": {
+          "type": "string",
+          "minLength": 2
+        },
+        "syntactic_structure": {
+          "type": "string",
+          "minLength": 4
+        },
         "candidate_meanings": {
           "type": "array",
           "minItems": 2,
           "uniqueItems": true,
-          "items": {"type": "string", "minLength": 1}
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
         },
-        "disciplinary_context": {"type": "string", "minLength": 4},
-        "ambiguity_reason": {"type": "string", "minLength": 8}
+        "disciplinary_context": {
+          "type": "string",
+          "minLength": 4
+        },
+        "ambiguity_reason": {
+          "type": "string",
+          "minLength": 8
+        }
       }
     }
   }

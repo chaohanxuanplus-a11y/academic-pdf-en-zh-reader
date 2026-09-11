@@ -44,26 +44,28 @@ def _candidate(index: int, *, evidence: bool = True) -> FigureNoteCandidate:
     )
 
 
-def test_each_figure_keeps_at_most_three_directly_supported_notes() -> None:
+def test_supported_figure_details_use_available_budget() -> None:
     units, translation, _ = make_bundle(
         [("figure-caption", "Figure 1 rises", "图1趋势")]
     )
 
     def fit(_: LayoutTrialRequest) -> LayoutTrialResult:
-        return LayoutTrialResult(True, 0)
+        return LayoutTrialResult(True, 0, 1, 1)
 
     result = select_orange_annotations(
         units,
         translation,
         figure_candidates=tuple(_candidate(index) for index in range(5)),
         teaching_candidates=(),
-        auxiliary_size_mpt=8_600,
+        auxiliary_size_mpt=9_000,
         trial_layout=fit,
     )
     assert [item.candidate_key for item in result.placements] == [
         "note-0",
         "note-1",
         "note-2",
+        "note-3",
+        "note-4",
     ]
 
 
@@ -77,8 +79,8 @@ def test_figure_note_without_exact_direct_evidence_fails_closed() -> None:
             translation,
             figure_candidates=(_candidate(0, evidence=False),),
             teaching_candidates=(),
-            auxiliary_size_mpt=8_600,
-            trial_layout=lambda _: LayoutTrialResult(True, 0),
+            auxiliary_size_mpt=9_000,
+            trial_layout=lambda _: LayoutTrialResult(True, 0, 1, 1),
         )
 
 
@@ -104,8 +106,8 @@ def test_figure_evidence_must_match_the_bound_source_slice() -> None:
             translation,
             figure_candidates=(candidate,),
             teaching_candidates=(),
-            auxiliary_size_mpt=8_600,
-            trial_layout=lambda _: LayoutTrialResult(True, 0),
+            auxiliary_size_mpt=9_000,
+            trial_layout=lambda _: LayoutTrialResult(True, 0, 1, 1),
         )
 
 
@@ -135,8 +137,8 @@ def test_frozen_graphic_evidence_requires_an_upstream_record_verifier() -> None:
             translation,
             figure_candidates=(candidate,),
             teaching_candidates=(),
-            auxiliary_size_mpt=8_600,
-            trial_layout=lambda _: LayoutTrialResult(True, 0),
+            auxiliary_size_mpt=9_000,
+            trial_layout=lambda _: LayoutTrialResult(True, 0, 1, 1),
         )
 
     result = select_orange_annotations(
@@ -144,8 +146,8 @@ def test_frozen_graphic_evidence_requires_an_upstream_record_verifier() -> None:
         translation,
         figure_candidates=(candidate,),
         teaching_candidates=(),
-        auxiliary_size_mpt=8_600,
-        trial_layout=lambda _: LayoutTrialResult(True, 0),
+        auxiliary_size_mpt=9_000,
+        trial_layout=lambda _: LayoutTrialResult(True, 0, 1, 1),
         verify_frozen_evidence=lambda record: record.object_id == "graphic-p1-7",
     )
     assert result.placements[0].evidence == (evidence,)

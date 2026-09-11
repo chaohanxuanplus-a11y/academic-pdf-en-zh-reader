@@ -209,7 +209,50 @@ def _parser() -> argparse.ArgumentParser:
     ambiguity_key.add_argument("--input", type=Path, required=True)
     ambiguity_key.add_argument("--output", type=Path, required=True)
     ambiguity_key.set_defaults(handler=_ambiguity_key)
+    packets = commands.add_parser("packets", help="Write bounded paragraph packets.")
+    packets.add_argument("--units", type=Path, required=True)
+    packets.add_argument("--output", type=Path, required=True)
+    packets.add_argument("--max-chars", type=int, default=12000)
+    packets.set_defaults(handler=_packets)
+    assemble = commands.add_parser(
+        "assemble", help="Assemble private drafts and actual review scope."
+    )
+    assemble.add_argument("--units", type=Path, required=True)
+    assemble.add_argument("--draft", type=Path, action="append", required=True)
+    assemble.add_argument("--review-record", type=Path, required=True)
+    assemble.add_argument("--translator-id", required=True)
+    assemble.add_argument("--revision", type=int, default=1)
+    assemble.add_argument("--output-dir", type=Path, required=True)
+    assemble.set_defaults(handler=_assemble)
     return parser
+
+
+def _packets(arguments):
+    from academic_pdf_en_zh_reader.orchestration.agent_packets import make_packets
+
+    _require_external_path(arguments.output)
+    result = make_packets(_load_bounded_json(arguments.units), arguments.max_chars)
+    return write_immutable_bytes(arguments.output, canonical_json_bytes(result))
+
+
+def _assemble(arguments):
+    from academic_pdf_en_zh_reader.orchestration.agent_packets import assemble
+
+    _require_external_path(arguments.output_dir)
+    result = assemble(
+        _load_bounded_json(arguments.units),
+        [_load_bounded_json(path) for path in arguments.draft],
+        translator_id=arguments.translator_id,
+        review_record=_load_bounded_json(arguments.review_record),
+        revision=arguments.revision,
+    )
+    # A new revision directory prevents accidental replacement of an active attempt.
+    arguments.output_dir.mkdir(exist_ok=False)
+    for name, artifact in result.items():
+        write_immutable_bytes(
+            arguments.output_dir / (name + ".json"), canonical_json_bytes(artifact)
+        )
+    return "ASSEMBLED"
 
 
 def main(argv: Sequence[str] | None = None) -> int:

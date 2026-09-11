@@ -135,6 +135,33 @@ def test_full_width_barrier_splits_two_multicolumn_bands() -> None:
     assert "wide-barrier" in result.bands[1].evidence
 
 
+def test_body_columns_remain_distinct_above_a_close_spanning_graphic() -> None:
+    lines = [
+        _line(f"{column}-{row}", left, y, left + 200_000, y + 10_000)
+        for column, left in enumerate((40_000, 320_000))
+        for row, y in enumerate((720_000, 705_000, 690_000))
+    ]
+    lines.extend(
+        _line(f"symbol-{x}", x, 707_000, x + 4_000, 713_000)
+        for x in (120_000, 190_000, 400_000, 470_000)
+    )
+    page = {
+        "page_number": 1,
+        "crop_box_mpt": [0, 0, 595_276, 841_890],
+        "lines": lines,
+        "graphic_regions": [
+            {
+                "id": "composite",
+                "kind": "figure",
+                "bbox_mpt": [40_000, 500_000, 520_000, 680_000],
+            }
+        ],
+    }
+    result = detect_page_bands(page)
+    assert [len(band.columns) for band in result.bands] == [2, 1]
+    assert result.score_ppm >= 800_000
+
+
 def test_full_width_horizontal_rule_is_a_barrier_without_reopening_pdf() -> None:
     page = {
         "page_number": 1,
@@ -259,7 +286,7 @@ def _two_column_page(
     }
 
 
-def test_repeated_document_columns_override_page_local_indent_anchors() -> None:
+def test_short_indented_lines_do_not_invent_document_columns() -> None:
     noisy_page = _two_column_page(3, noisy_indents=True)
     document = {
         "pages": [
@@ -272,11 +299,50 @@ def test_repeated_document_columns_override_page_local_indent_anchors() -> None:
     local = detect_page_bands(noisy_page)
     detected = detect_document_bands(document)
 
-    assert local.score_ppm < 500_000
-    assert "unsupported-column-count:4" in local.evidence
+    assert local.score_ppm >= 800_000
+    assert [len(band.columns) for band in local.bands] == [2]
     assert [len(band.columns) for band in detected[2].bands] == [2]
     assert detected[2].score_ppm >= 800_000
-    assert "document-column-template:2" in detected[2].evidence
+    assert detected[2] == local
+
+
+def test_front_matter_author_fragments_remain_in_the_spanning_band() -> None:
+    title = {
+        **_line("title", 40_000, 700_000, 520_000, 715_000),
+        "text": "A Synthetic Study of Materials",
+        "max_font_size_mpt": 15_000,
+    }
+    abstract = {
+        **_line("abstract", 40_000, 610_000, 520_000, 620_000),
+        "text": "Abstract: A synthetic summary.",
+    }
+    authors = [
+        {
+            **_line(f"author-{i}", left, 670_000, right, 682_000),
+            "text": "Synthetic Author",
+            "max_font_size_mpt": 12_000,
+        }
+        for i, (left, right) in enumerate(((40_000, 235_000), (260_000, 490_000)))
+    ]
+    affiliation = {
+        **_line("affiliation", 40_000, 650_000, 520_000, 658_000),
+        "text": "1) Synthetic University",
+        "max_font_size_mpt": 8_000,
+    }
+    body = [
+        _line(f"body-{c}-{r}", x, y, x + 200_000, y + 10_000)
+        for c, x in enumerate((40_000, 320_000))
+        for r, y in enumerate((570_000, 555_000, 540_000))
+    ]
+    page = {
+        "page_number": 1,
+        "crop_box_mpt": [0, 0, 595_276, 841_890],
+        "lines": [title, *authors, affiliation, abstract, *body],
+        "graphic_regions": [],
+    }
+    result = detect_page_bands(page)
+    assert [len(b.columns) for b in result.bands] == [1, 2]
+    assert result.score_ppm >= 800_000
 
 
 def test_document_column_template_does_not_upgrade_sparse_page() -> None:

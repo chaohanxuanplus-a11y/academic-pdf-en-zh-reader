@@ -1,62 +1,12 @@
 <!-- SPDX-FileCopyrightText: 2026 academic-pdf-en-zh-reader contributors -->
 <!-- SPDX-License-Identifier: Apache-2.0 -->
 
-# Independent review and QA policy
+# Focused validation
 
-## Independence gate
+The default semantic review is `targeted`. The translating Agent may review its own difficult units; `reviewed_unit_ids` lists exactly the units checked, in source order. Do not claim whole-paper or independent review unless performed. A separately requested independent review retains distinct reviewer identity and complete coverage.
 
-The whole-document translation records a non-empty translator identity. Review
-records a non-empty reviewer identity. The review's translator identity must
-match the identity bound into the translation; that identity and the reviewer
-identity must differ, and the reviewer must not have participated in producing
-the translation. If the environment cannot provide an independent Agent or
-cannot review every unit in the current context, processing stops; a second pass
-by the same role or stitched batches cannot be reported as independent review.
+Programs check source/translation coverage and bindings, numbers/units/citations, annotation placement and core coverage, geometry/overlap, embedded glyphs, original-page preservation, active-content absence and final render readability. Run the final mechanical chain once; a failed check reports a local repair target. Keep final source identity and candidate-byte binding intact.
 
-## Review scope
+Inspect first/last/flagged pages, plus a useful figure sample. Inspect figure contents for interpretation independently of final layout sampling. Do not repeat full-paper translation or full visual inspection for a local text correction; rerender affected output and complete the necessary final byte checks.
 
-The reviewer compares every English unit with its candidate Chinese text and
-checks the five translation priorities: fact, degree, logic, data, and terminology.
-Mechanical checks for unit coverage, numbers, units, ranges, signs, citations, and
-logic markers supplement this comparison but do not prove semantic correctness.
-
-Issues have three semantic classes:
-
-- `hard_error`: a factual, degree, logic, data, or terminology error that must be
-  corrected and independently rechecked before layout;
-- `style_improvement`: meaning-preserving Chinese improvement, recorded without
-  disguising it as a semantic failure; and
-- `unresolved_ambiguity`: available context cannot safely select one material
-  meaning.
-
-After a correction, the reviewer rechecks the changed unit, adjacent units, and
-units sharing affected terminology. A passed review cannot contain an unresolved
-`hard_error`.
-
-## Ambiguity contract
-
-Each unresolved material ambiguity has a stable `ambiguity_key` derived from five
-parts: the English expression, its syntactic structure, candidate meanings, domain
-context, and the specific reason the context is insufficient. Broad labels such as
-"term ambiguity" are invalid. The key is stable across repeats of the same case.
-
-Final unresolved spans receive a bright-red underline. At the first occurrence of
-each stable key, the same-size bright-red text `（可能存在歧义）` follows the span. The label is
-not a quality report and does not replace the translated text.
-
-## Release gate
-
-Layout may start only after exact unit coverage, bounded spans, mechanical semantic
-checks, translation-hash binding, independent identities, and review status all
-pass. Failed or incomplete review produces no candidate final PDF.
-
-## Responsibility statement in the delivered PDF
-
-Every successful PDF includes the fixed project responsibility statement exactly
-once at its end. If no safe region exists on the final paper page, append one
-dedicated final statement page rather than omit the statement or move paper text.
-The appended page is project-authored, has no source-paper page mapping, and does
-not change translation coverage or annotation budgets. Validate its text, fonts,
-page geometry, lack of overlap, and final position alongside the ordinary PDF
-checks. Missing, duplicate, or malformed statement content fails delivery; only
-a successfully validated and delivered appended page produces the user notice.
+Known local failures are repair work. Genuine missing input or a persistent unresolved safety/content defect blocks final delivery. Runtime/release audits belong to environment setup or publishing, not every paper. Report only actionable failures and actual checks; internal success logs are not the user's deliverable.

@@ -3,8 +3,8 @@
 
 [project]
 name = "academic-pdf-en-zh-reader"
-version = "0.1.0"
-description = "Create A3 English-Chinese academic reading PDFs with deterministic mirrored layout."
+version = "0.2.0"
+description = "Create A3 English-Chinese academic reading PDFs with continuous Chinese columns and contextual notes."
 requires-python = ">=3.12,<3.13"
 license = "Apache-2.0"
 dependencies = [

@@ -89,6 +89,12 @@ def measure_target_lines(
 
     if type(maximum_width_mpt) is not int or maximum_width_mpt <= 0:
         raise UnitPartError("maximum target width must be a positive integer")
+    from copy import deepcopy
+
+    cache = resolver.measurement_cache
+    cache_key = (text, maximum_width_mpt, style, semantic_role, style_contract_version)
+    if cache_key in cache:
+        return deepcopy(cache[cache_key])
     style_id = (
         f"typography-v{style_contract_version}:{semantic_role}:"
         f"{style.font_role}:{style.size_mpt}:{style.line_height_mpt}"
@@ -131,7 +137,11 @@ def measure_target_lines(
             {"line_box_contract_version": "1.0.0", **line}
         )
         result.append(line)
-    return tuple(result)
+    frozen = tuple(result)
+    if len(cache) >= 512:
+        cache.pop(next(iter(cache)))
+    cache[cache_key] = deepcopy(frozen)
+    return frozen
 
 
 def measure_composite_target_lines(
@@ -354,75 +364,4 @@ def style_descriptor(
         "font_role": style.font_role,
         "size_mpt": style.size_mpt,
         "line_height_mpt": style.line_height_mpt,
-    }
-
-
-def legal_line_breaks(
-    text: str,
-    lines: tuple[dict[str, object], ...],
-) -> tuple[dict[str, object], ...]:
-    """Record target line boundaries; Task 14 decides whether to use them."""
-
-    sentence_end = frozenset("。！？!?")
-    breaks: list[dict[str, object]] = []
-    for line in lines[:-1]:
-        target_end = line["target_end"]
-        assert isinstance(target_end, int)
-        prefix = text[:target_end].rstrip()
-        kind = "sentence" if prefix and prefix[-1] in sentence_end else "line"
-        breaks.append({"after_line": line["index"] + 1, "kind": kind})
-    return tuple(breaks)
-
-
-def legal_composite_line_breaks(
-    text: str,
-    lines: tuple[dict[str, object], ...],
-    segments: tuple[dict[str, object], ...],
-) -> tuple[dict[str, object], ...]:
-    """Classify composite boundaries without treating a partial label as a sentence."""
-
-    sentence_end = frozenset("。！？!?")
-    breaks: list[dict[str, object]] = []
-    for line in lines[:-1]:
-        composite_end = int(line["composite_end"])
-        inside_label = any(
-            segment["kind"] == "ambiguity-label"
-            and int(segment["composite_start"])
-            < composite_end
-            < int(segment["composite_end"])
-            for segment in segments
-        )
-        target_end = int(line["target_end"])
-        prefix = text[:target_end].rstrip()
-        kind = (
-            "sentence"
-            if not inside_label and prefix and prefix[-1] in sentence_end
-            else "line"
-        )
-        breaks.append({"after_line": int(line["index"]) + 1, "kind": kind})
-    return tuple(breaks)
-
-
-def initial_unit_part(
-    *,
-    unit_id: str,
-    home_frame_id: str,
-    line_count: int,
-    source_fragment_count: int,
-) -> dict[str, object]:
-    """Return the sole unsplit Task 13 part for one complete semantic unit."""
-
-    if line_count < 1 or source_fragment_count < 1:
-        raise UnitPartError("initial unit part ranges must be positive")
-    return {
-        "id": f"{unit_id}:part:0000",
-        "unit_id": unit_id,
-        "part_index": 0,
-        "frame_id": home_frame_id,
-        "line_start": 0,
-        "line_end": line_count,
-        "source_fragment_start": 0,
-        "source_fragment_end": source_fragment_count,
-        "is_first_part": True,
-        "creates_anchor": True,
     }

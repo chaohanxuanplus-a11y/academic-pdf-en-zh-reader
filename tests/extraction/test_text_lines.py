@@ -165,6 +165,53 @@ def test_raised_letter_table_note_marker_is_not_treated_as_an_inline_symbol(
     assert texts == ["a", "Table 1 Molecular mediators"]
 
 
+@pytest.mark.parametrize("marker", ["-1", "2+", "3/2"])
+def test_inline_numeric_superscript_group_preserves_prose_order(
+    tmp_path: Path, marker: str
+) -> None:
+    path = tmp_path / "numeric-suffix.pdf"
+    canvas = Canvas(str(path), pagesize=A4, invariant=1)
+    prefix = "The unit is cm"
+    canvas.setFont("Helvetica", 10)
+    canvas.drawString(72, 700, prefix)
+    x = 72 + canvas.stringWidth(prefix, "Helvetica", 10)
+    canvas.setFont("Helvetica", 6)
+    canvas.drawString(x, 705, marker)
+    x += canvas.stringWidth(marker, "Helvetica", 6)
+    canvas.setFont("Helvetica", 10)
+    canvas.drawString(x, 700, ".")
+    canvas.save()
+    lines = build_text_lines(extract_page_objects(path).pages)[0].lines
+    assert [line.text for line in lines] == [prefix + marker + "."]
+
+
+@pytest.mark.parametrize(
+    "prefix,marker,suffix",
+    [
+        ("Zn(OH)", "2", ", and oxide."),
+        ("The D", "max", " value."),
+        ("Zn 2p", "3/2", " spectra."),
+        ("ZnCl", "2,", " and water."),
+    ],
+)
+def test_lowered_suffix_group_stays_in_the_prose_line(
+    tmp_path: Path, prefix: str, marker: str, suffix: str
+) -> None:
+    path = tmp_path / "lowered-suffix.pdf"
+    canvas = Canvas(str(path), pagesize=A4, invariant=1)
+    canvas.setFont("Helvetica", 10)
+    canvas.drawString(72, 700, prefix)
+    x = 72 + canvas.stringWidth(prefix, "Helvetica", 10)
+    canvas.setFont("Helvetica", 6)
+    canvas.drawString(x, 698, marker)
+    x += canvas.stringWidth(marker, "Helvetica", 6)
+    canvas.setFont("Helvetica", 10)
+    canvas.drawString(x, 700, suffix)
+    canvas.save()
+    lines = build_text_lines(extract_page_objects(path).pages)[0].lines
+    assert [line.text for line in lines] == [prefix + marker + suffix]
+
+
 def test_strong_figure_table_caption_and_reference_relationships_are_stable(
     tmp_path: Path,
 ) -> None:
@@ -263,6 +310,118 @@ def test_multiline_caption_does_not_consume_ambiguous_following_body_line() -> N
     assert len(captions) == 1
     assert captions[0].line_ids == tuple(line.id for line in lines[:3])
     assert lines[3].id not in captions[0].line_ids
+
+
+def test_bold_caption_continuation_can_start_uppercase_left_of_drawing() -> None:
+    def line(i: int, text: str, top: int, right: int) -> TextLine:
+        return TextLine(
+            f"l{i}",
+            1,
+            text,
+            (72000, top - 9000, right, top),
+            (f"c{i}",),
+            ("Helvetica-Bold",),
+            (None,),
+            9000,
+        )
+
+    lines = (
+        line(1, "Fig. 1. Complete description.", 480000, 300000),
+        line(2, "The inset shows the measured profile.", 469000, 310000),
+        line(3, "(f) SR.", 458000, 95000),
+    )
+    graphic = GraphicRegion(
+        "g1", 1, "figure", (110000, 500000, 320000, 650000), "enclosed-vector-drawing"
+    )
+    assert _captions(1, lines, (graphic,))[0].line_ids == ("l1", "l2", "l3")
+
+
+def test_numbered_equation_fragments_are_excluded_but_explanation_is_retained() -> None:
+    from academic_pdf_en_zh_reader.extraction.blocks import _mark_equation_lines
+
+    def line(
+        i: int, text: str, box: tuple[int, int, int, int], font: str = "Helvetica"
+    ) -> TextLine:
+        return TextLine(f"l{i}", 1, text, box, (f"c{i}",), (font,), (None,), 10000)
+
+    lines = (
+        line(
+            1, "The response is calculated as follows:", (72000, 700000, 290000, 710000)
+        ),
+        line(2, "R", (85000, 673000, 92000, 683000)),
+        line(3, "=", (96000, 674000, 103000, 684000), "Symbol"),
+        line(4, "a + b", (110000, 678000, 155000, 688000)),
+        line(5, "(1)", (278000, 673000, 290000, 683000)),
+        line(
+            6, "where a and b are measured quantities.", (72000, 650000, 290000, 660000)
+        ),
+        line(7, "The", (72000, 630000, 89000, 640000)),
+    )
+    result = _mark_equation_lines(lines)
+    assert all(item.exclusion_kind == "equation" for item in result[1:5])
+    assert all(item.coverage_eligible for item in (result[0], result[5], result[6]))
+
+
+def test_inline_display_equation_keeps_its_prose_prefix_separate(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "inline-equation.pdf"
+    c = Canvas(str(path), pagesize=A4, invariant=1)
+    c.setFont("Helvetica", 10)
+    prefix = "The result is expressed as "
+    c.drawString(72, 700, prefix)
+    x = 72 + c.stringWidth(prefix, "Helvetica", 10)
+    c.setFont("Courier", 10)
+    c.drawString(x, 700, "CR")
+    c.drawString(x + 15, 697, "= a + b")
+    c.save()
+    lines = build_text_lines(extract_page_objects(path).pages)[0].lines
+    assert any(line.text == prefix.strip() for line in lines)
+    assert any(line.text == "CR" for line in lines)
+
+
+def test_inline_statistic_with_its_own_operator_is_not_split(tmp_path: Path) -> None:
+    path = tmp_path / "inline-statistic.pdf"
+    c = Canvas(str(path), pagesize=A4, invariant=1)
+    c.setFont("Helvetica", 10)
+    prefix = "The measured correlation was "
+    c.drawString(72, 700, prefix)
+    x = 72 + c.stringWidth(prefix, "Helvetica", 10)
+    c.setFont("Helvetica-Oblique", 10)
+    c.drawString(x, 700, "r")
+    x += c.stringWidth("r", "Helvetica-Oblique", 10)
+    c.setFont("Helvetica", 10)
+    c.drawString(x, 700, " = 0.25.")
+    c.save()
+    lines = build_text_lines(extract_page_objects(path).pages)[0].lines
+    assert [line.text for line in lines] == [prefix + "r = 0.25."]
+
+
+def test_parent_validates_coincident_subscript_and_superscript_order(
+    tmp_path: Path,
+) -> None:
+    from academic_pdf_en_zh_reader.extraction import extract_document
+    from academic_pdf_en_zh_reader.extraction.api import _validate_page_items
+    from academic_pdf_en_zh_reader.extraction.revalidate import (
+        validate_derived_semantics,
+    )
+    from academic_pdf_en_zh_reader.security.limits import WorkerLimits
+
+    path = tmp_path / "paired-scripts.pdf"
+    c = Canvas(str(path), pagesize=A4, invariant=1)
+    c.setFont("Helvetica", 10)
+    c.drawString(72, 700, "CO")
+    x = 72 + c.stringWidth("CO", "Helvetica", 10)
+    c.setFont("Helvetica", 6)
+    c.drawString(x, 705, "2")
+    c.drawString(x, 698, "3")
+    c.save()
+    page = extract_document(path)["pages"][0]
+    assert page["lines"][0]["text"] == "CO32"
+    _validate_page_items(
+        page, 1, set(), crop_box=page["crop_box_mpt"], limits=WorkerLimits()
+    )
+    validate_derived_semantics([page])
 
 
 def test_table_internal_text_is_retained_but_never_body_eligible(

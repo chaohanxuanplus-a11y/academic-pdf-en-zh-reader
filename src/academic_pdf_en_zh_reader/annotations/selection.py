@@ -41,9 +41,8 @@ from academic_pdf_en_zh_reader.annotations.validation import (
 from academic_pdf_en_zh_reader.job.hashing import sha256_bytes, sha256_canonical
 
 MIN_AUXILIARY_SIZE_MPT = 7_000
-MAX_FIGURE_NOTES_PER_FIGURE = 3
 CANDIDATE_SET_CONTRACT_VERSION = "1.0.0"
-ORANGE_SELECTION_POLICY_VERSION = "1.0.0"
+ORANGE_SELECTION_POLICY_VERSION = "2.0.0"
 
 
 @dataclass(frozen=True)
@@ -89,6 +88,7 @@ class OrangePlacement:
                     "english_original": self.english_original,
                     "chinese_meaning": self.chinese_meaning,
                     "deferred_occurrences": self.deferred_occurrences,
+                    "essential": self.essential,
                 }
             )
         else:
@@ -122,6 +122,8 @@ class LayoutTrialResult:
 
     feasible: bool
     added_continuation_pages: int
+    chinese_page_count: int = 0
+    body_page_budget: int = 0
 
     def __post_init__(self) -> None:
         if type(self.feasible) is not bool:
@@ -380,6 +382,7 @@ def _candidate_snapshot(
                 "english_original": candidate.english_original,
                 "chinese_meaning": candidate.chinese_meaning,
                 "value_priority": candidate.value_priority,
+                "essential": candidate.essential,
                 "occurrences": [
                     {
                         "unit_id": occurrence.unit_id,
@@ -411,18 +414,13 @@ def _candidate_snapshot(
     }
 
 
-def orange_selection_policy_payload() -> dict[str, object]:
-    """Return the fixed algorithm and threshold contract used by selection."""
-
+def orange_selection_policy_payload():
     return {
-        "contract_version": ORANGE_SELECTION_POLICY_VERSION,
-        "candidate_set_contract_version": CANDIDATE_SET_CONTRACT_VERSION,
-        "priority_order": ["figure-table-reading", "dark-orange-teaching"],
-        "max_figure_notes_per_figure": MAX_FIGURE_NOTES_PER_FIGURE,
-        "ordinary_may_add_continuation": False,
-        "essential_figure_may_add_continuation": True,
-        "essential_figure_variant_order": ["full", "compact", "compact-continuation"],
-        "auxiliary_size_floor_mpt": MIN_AUXILIARY_SIZE_MPT,
+        "contract_version": "2.0.0",
+        "priority_order": ["core", "figure-details", "teaching-details"],
+        "budget_includes_statement": True,
+        "optional_selection": "bounded-prefix",
+        "auxiliary_size_floor_mpt": 7000,
     }
 
 
@@ -456,6 +454,8 @@ def freeze_orange_candidate_set(
             raise AnnotationValidationError("teaching expressions must be unique")
         expressions.add(normalized_expression)
         _positive_priority(candidate.value_priority, label="teaching priority")
+        if type(candidate.essential) is not bool:
+            raise AnnotationValidationError("teaching importance must be boolean")
         if not candidate.occurrences:
             raise AnnotationValidationError("teaching candidate requires an occurrence")
         occurrences: list[TeachingOccurrence] = []
@@ -687,26 +687,12 @@ def select_orange_annotations(
     validated_figures = candidate_set.figure_candidates
     candidate_set_hash = candidate_set.candidate_set_hash
 
-    mandatory = _trial(
-        trial_layout,
-        LayoutTrialRequest(
-            phase="mandatory-only",
-            placements=(),
-            allow_continuation=False,
-            mandatory_items=frozen_mandatory,
-            mandatory_items_hash=mandatory_items_hash,
-        ),
-    )
-    if not mandatory.feasible:
-        raise AnnotationValidationError("mandatory-only layout must be feasible")
-
-    accepted: list[OrangePlacement] = []
-    accepted_by_figure: defaultdict[str, int] = defaultdict(int)
-    current_continuation_pages = mandatory.added_continuation_pages
+    core, optional = [], []
+    represented = set()
     for candidate in validated_figures:
-        if accepted_by_figure[candidate.figure_id] >= MAX_FIGURE_NOTES_PER_FIGURE:
-            continue
-        base = OrangePlacement(
+        essential = candidate.essential or candidate.figure_id not in represented
+        represented.add(candidate.figure_id)
+        placement = OrangePlacement(
             kind="figure-table-reading",
             candidate_key=candidate.key,
             unit_id=candidate.caption_unit_id,
@@ -717,135 +703,95 @@ def select_orange_annotations(
             priority=candidate.value_priority,
             figure_id=candidate.figure_id,
             evidence=candidate.evidence,
+            essential=essential,
+        )
+        (core if essential else optional).append(placement)
+    for candidate in validated_teaching:
+        occurrence = candidate.occurrences[0]
+        placement = OrangePlacement(
+            kind="dark-orange-teaching",
+            candidate_key=candidate.key,
+            unit_id=occurrence.unit_id,
+            target_start=occurrence.target_start,
+            target_end=occurrence.target_end,
+            content=format_teaching_content(
+                candidate.english_original, candidate.chinese_meaning
+            ),
+            auxiliary_size_mpt=auxiliary_size_mpt,
+            priority=candidate.value_priority,
+            source_start=occurrence.source_start,
+            source_end=occurrence.source_end,
+            english_original=candidate.english_original,
+            chinese_meaning=candidate.chinese_meaning,
             essential=candidate.essential,
         )
-        chosen: OrangePlacement | None = None
-        chosen_continuation_pages = current_continuation_pages
-        native_variants = [base]
-        if candidate.compact_content != candidate.content:
-            native_variants.append(
-                replace(base, content=candidate.compact_content, compacted=True)
-            )
-        for variant in native_variants:
-            trial = _trial(
-                trial_layout,
-                LayoutTrialRequest(
-                    phase="candidate-trial",
-                    placements=tuple((*accepted, variant)),
-                    allow_continuation=False,
-                    mandatory_items=frozen_mandatory,
-                    mandatory_items_hash=mandatory_items_hash,
-                ),
-            )
-            if (
-                trial.feasible
-                and trial.added_continuation_pages == current_continuation_pages
-            ):
-                chosen = variant
-                chosen_continuation_pages = trial.added_continuation_pages
-                break
-        if chosen is None and candidate.essential:
-            compact = replace(
-                base,
-                content=candidate.compact_content,
-                compacted=candidate.compact_content != candidate.content,
-            )
-            trial = _trial(
-                trial_layout,
-                LayoutTrialRequest(
-                    phase="candidate-trial",
-                    placements=tuple((*accepted, compact)),
-                    allow_continuation=True,
-                    mandatory_items=frozen_mandatory,
-                    mandatory_items_hash=mandatory_items_hash,
-                ),
-            )
-            if (
-                trial.feasible
-                and trial.added_continuation_pages >= current_continuation_pages
-            ):
-                chosen = replace(
-                    compact,
-                    uses_continuation=(
-                        trial.added_continuation_pages > current_continuation_pages
-                    ),
-                )
-                chosen_continuation_pages = trial.added_continuation_pages
-        if chosen is not None:
-            accepted.append(chosen)
-            accepted_by_figure[candidate.figure_id] += 1
-            current_continuation_pages = chosen_continuation_pages
+        (core if candidate.essential else optional).append(placement)
+    # At least one term survives even if all submitted vocabulary was optional.
+    if validated_teaching and not any(p.kind == "dark-orange-teaching" for p in core):
+        first = next(p for p in optional if p.kind == "dark-orange-teaching")
+        optional.remove(first)
+        core.append(replace(first, essential=True))
+    optional.sort(
+        key=lambda p: (p.kind != "figure-table-reading", -p.priority, p.candidate_key)
+    )
 
-    for candidate in validated_teaching:
-        occurrences = candidate.occurrences
-        content = format_teaching_content(
-            candidate.english_original, candidate.chinese_meaning
+    def probe(placements, phase="candidate-trial", frozen_hash=None):
+        return _trial(
+            trial_layout,
+            LayoutTrialRequest(
+                phase=phase,
+                placements=tuple(placements),
+                allow_continuation=True,
+                mandatory_items=frozen_mandatory,
+                mandatory_items_hash=mandatory_items_hash,
+                frozen_selection_hash=frozen_hash,
+            ),
         )
-        for occurrence_index, occurrence in enumerate(occurrences):
-            placement = OrangePlacement(
-                kind="dark-orange-teaching",
-                candidate_key=candidate.key,
-                unit_id=occurrence.unit_id,
-                target_start=occurrence.target_start,
-                target_end=occurrence.target_end,
-                content=content,
-                auxiliary_size_mpt=auxiliary_size_mpt,
-                priority=candidate.value_priority,
-                source_start=occurrence.source_start,
-                source_end=occurrence.source_end,
-                english_original=candidate.english_original,
-                chinese_meaning=candidate.chinese_meaning,
-                deferred_occurrences=occurrence_index,
-            )
-            trial = _trial(
-                trial_layout,
-                LayoutTrialRequest(
-                    phase="candidate-trial",
-                    placements=tuple((*accepted, placement)),
-                    allow_continuation=False,
-                    mandatory_items=frozen_mandatory,
-                    mandatory_items_hash=mandatory_items_hash,
-                ),
-            )
-            if (
-                trial.feasible
-                and trial.added_continuation_pages == current_continuation_pages
-            ):
-                accepted.append(placement)
-                break
 
+    base = probe(core, "mandatory-only")
+    if not base.feasible:
+        raise AnnotationValidationError("core reading content cannot fit")
+    if base.chinese_page_count > base.body_page_budget:
+        compact = {c.key: c.compact_content for c in validated_figures}
+        core = [
+            replace(p, content=compact[p.candidate_key], compacted=True)
+            if p.kind == "figure-table-reading"
+            and compact[p.candidate_key] != p.content
+            else p
+            for p in core
+        ]
+        base = probe(core, "mandatory-only")
+        if not base.feasible:
+            raise AnnotationValidationError("compact core reading content cannot fit")
+    chosen = []
+    if base.body_page_budget and base.chinese_page_count <= base.body_page_budget:
+        full = probe(core + optional) if optional else base
+        if full.feasible and full.chinese_page_count <= base.body_page_budget:
+            chosen = optional
+        else:
+            low, high = 0, len(optional)
+            while low + 1 < high:
+                middle = (low + high) // 2
+                trial = probe(core + optional[:middle])
+                if trial.feasible and trial.chinese_page_count <= base.body_page_budget:
+                    low = middle
+                else:
+                    high = middle
+            chosen = optional[:low]
+    accepted = core + chosen
     selection_items = [placement.to_item() for placement in accepted]
-    orange_kind_order = {
-        "figure-table-reading": 0,
-        "dark-orange-teaching": 1,
-    }
     selection_items.sort(
         key=lambda item: (
-            index.unit_order[str(item["unit_id"])],
-            int(item["target_start"]),
-            orange_kind_order[str(item["kind"])],
-            str(item["id"]),
+            index.unit_order[item["unit_id"]],
+            item["target_start"],
+            {"figure-table-reading": 0, "dark-orange-teaching": 1}[item["kind"]],
+            item["id"],
         )
     )
     selection_hash = sha256_canonical({"placements": selection_items})
-    final = _trial(
-        trial_layout,
-        LayoutTrialRequest(
-            phase="final-frozen",
-            placements=tuple(accepted),
-            allow_continuation=any(
-                placement.uses_continuation for placement in accepted
-            ),
-            mandatory_items=frozen_mandatory,
-            mandatory_items_hash=mandatory_items_hash,
-            frozen_selection_hash=selection_hash,
-        ),
-    )
-    if (
-        not final.feasible
-        or final.added_continuation_pages != current_continuation_pages
-    ):
-        raise AnnotationValidationError("frozen annotation selection is not feasible")
+    final = probe(accepted, "final-frozen", selection_hash)
+    if not final.feasible:
+        raise AnnotationValidationError("reading selection is not feasible")
     return OrangeSelectionResult(
         mandatory_items=frozen_mandatory,
         mandatory_items_hash=mandatory_items_hash,
@@ -853,7 +799,7 @@ def select_orange_annotations(
         auxiliary_size_mpt=auxiliary_size_mpt,
         candidate_set_hash=candidate_set_hash,
         selection_hash=selection_hash,
-        continuation_pages=current_continuation_pages,
+        continuation_pages=final.added_continuation_pages,
     )
 
 

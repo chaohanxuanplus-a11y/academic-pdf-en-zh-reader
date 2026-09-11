@@ -110,6 +110,7 @@ class FontRunResolver:
     """Choose one face per grapheme from the fixed primary/symbol chain."""
 
     def __init__(self, registry: FontRegistry) -> None:
+        self.measurement_cache = {}
         self._registry = registry
 
     @property

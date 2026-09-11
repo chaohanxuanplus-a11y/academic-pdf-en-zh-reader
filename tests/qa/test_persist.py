@@ -47,7 +47,7 @@ def _rendered_state(inputs: dict[str, object], *, pdf_hash: str | None = None):
             "units": sha256_canonical(inputs["units"]),
         },
         JobStage.TRANSLATED: {"translation": sha256_canonical(inputs["translation"])},
-        JobStage.INDEPENDENTLY_REVIEWED: {"review": sha256_canonical(inputs["review"])},
+        JobStage.REVIEWED: {"review": sha256_canonical(inputs["review"])},
         JobStage.ANNOTATED: {"annotations": sha256_canonical(inputs["annotations"])},
         JobStage.LAID_OUT: {
             "frame-graph": sha256_canonical(inputs["frame_graph"]),

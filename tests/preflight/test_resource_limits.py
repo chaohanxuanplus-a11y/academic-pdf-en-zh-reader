@@ -387,6 +387,102 @@ def test_recursive_color_spaces_reject_unknown_alternates(tmp_path: Path) -> Non
 
 
 @pytest.mark.parametrize(
+    ("family", "components"),
+    [("/DeviceGray", 1), ("/DeviceRGB", 3), ("/DeviceCMYK", 4)],
+)
+def test_device_color_space_singleton_array_preserves_image_budget(
+    tmp_path: Path, family: str, components: int
+) -> None:
+    image_pdf = _with_image(
+        _fixture(tmp_path),
+        tmp_path / "device-array.pdf",
+        color_space=ArrayObject([NameObject(family)]),
+    )
+
+    result = preflight_safe_copy(image_pdf)
+
+    assert result["passed"] is True
+    assert result["limits"]["image_bytes"]["observed"] == 10_000 * components
+    bounded = preflight_safe_copy(
+        image_pdf, limits=PreflightLimits(max_image_bytes=10_000 * components - 1)
+    )
+    assert "IMAGE_BYTES_LIMIT_EXCEEDED" in bounded["error_codes"]
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        ArrayObject([NameObject("/DeviceRGB"), NumberObject(1)]),
+        ArrayObject([TextStringObject("DeviceRGB")]),
+        ArrayObject([NameObject("/Unknown")]),
+        ArrayObject([ArrayObject([NameObject("/DeviceRGB")])]),
+    ],
+)
+def test_malformed_device_color_space_arrays_still_fail_closed(
+    tmp_path: Path, value: object
+) -> None:
+    image_pdf = _with_image(
+        _fixture(tmp_path), tmp_path / "bad-device-array.pdf", color_space=value
+    )
+    result = preflight_safe_copy(image_pdf)
+    assert "MALFORMED_COLOR_SPACE" in result["error_codes"]
+
+
+def _with_resource_color_space(source: Path, output: Path, value: object) -> Path:
+    writer = PdfWriter(clone_from=source)
+    writer.pages[0]["/Resources"][NameObject("/ColorSpace")] = DictionaryObject(
+        {NameObject("/PaintSpace"): value}
+    )
+    with output.open("wb") as stream:
+        writer.write(stream)
+    return output
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        NameObject("/Pattern"),
+        ArrayObject([NameObject("/Pattern")]),
+        ArrayObject([NameObject("/Pattern"), NameObject("/DeviceRGB")]),
+    ],
+)
+def test_pattern_resource_is_valid_but_not_an_image_color_space(
+    tmp_path: Path, value: object
+) -> None:
+    source = _fixture(tmp_path)
+    resource_pdf = _with_resource_color_space(
+        source, tmp_path / "pattern-resource.pdf", value
+    )
+    result = preflight_safe_copy(resource_pdf)
+    assert result["passed"] is True
+    assert result["limits"]["image_bytes"]["observed"] == 0
+
+    image_pdf = _with_image(source, tmp_path / "pattern-image.pdf", color_space=value)
+    assert "MALFORMED_COLOR_SPACE" in preflight_safe_copy(image_pdf)["error_codes"]
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        ArrayObject([NameObject("/Pattern"), NameObject("/Unknown")]),
+        ArrayObject([NameObject("/Pattern"), NameObject("/Pattern")]),
+        ArrayObject(
+            [NameObject("/Pattern"), NameObject("/DeviceRGB"), NumberObject(1)]
+        ),
+        ArrayObject([NameObject("/Pattern"), ArrayObject([NameObject("/Pattern")])]),
+        ArrayObject([TextStringObject("/Pattern")]),
+    ],
+)
+def test_malformed_pattern_resources_still_fail_closed(
+    tmp_path: Path, value: object
+) -> None:
+    source = _with_resource_color_space(
+        _fixture(tmp_path), tmp_path / "bad-pattern-resource.pdf", value
+    )
+    assert "MALFORMED_COLOR_SPACE" in preflight_safe_copy(source)["error_codes"]
+
+
+@pytest.mark.parametrize(
     "color_space",
     [
         ArrayObject(

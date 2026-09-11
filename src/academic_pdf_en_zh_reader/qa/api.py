@@ -24,8 +24,7 @@ from academic_pdf_en_zh_reader.qa.geometry import (
     validate_a3_pages,
     validate_bounds_and_overlap,
     validate_continuation_and_sizes,
-    validate_leader_policy,
-    validate_mirrored_frames,
+    validate_reading_frames,
     validate_source_left_one_to_one,
 )
 from academic_pdf_en_zh_reader.qa.page_contract import (
@@ -47,7 +46,7 @@ from academic_pdf_en_zh_reader.qa.semantic import (
 from academic_pdf_en_zh_reader.rendering.contracts import OverlayPlanLimits
 from academic_pdf_en_zh_reader.rendering.overlay_plan import build_overlay_plan
 from academic_pdf_en_zh_reader.review.review_validation import (
-    validate_independent_review,
+    validate_review,
 )
 from academic_pdf_en_zh_reader.review.translation_validation import (
     validate_translation_artifact,
@@ -78,13 +77,12 @@ _POLICY_NAMES = (
 _GATES = (
     ("parent.chain", "security"),
     ("semantic.translation-coverage", "semantic"),
-    ("semantic.independent-review", "semantic"),
+    ("semantic.review", "semantic"),
     ("content.annotation-policy", "content"),
     ("geometry.a3-pages", "geometry"),
     ("geometry.source-left-one-to-one", "geometry"),
-    ("geometry.mirrored-frames", "geometry"),
+    ("geometry.reading-frames", "geometry"),
     ("geometry.bounds-and-overlap", "geometry"),
-    ("geometry.leader-policy", "geometry"),
     ("geometry.continuation-fixed-size", "geometry"),
     ("font.embedded-tounicode", "font"),
     ("font.draw-run-binding", "font"),
@@ -377,7 +375,7 @@ def run_mechanical_qa(
                 "SEMANTIC_TRANSLATION_INVALID",
             ),
             (
-                lambda: validate_independent_review(translation, review),
+                lambda: validate_review(translation, review),
                 "SEMANTIC_REVIEW_INVALID",
             ),
             (
@@ -395,16 +393,12 @@ def run_mechanical_qa(
                 "GEOMETRY_SOURCE_PLACEMENT_INVALID",
             ),
             (
-                lambda: validate_mirrored_frames(source, frame_graph, layout),
-                "GEOMETRY_MIRROR_INVALID",
+                lambda: validate_reading_frames(source, frame_graph, layout),
+                "GEOMETRY_READING_FRAMES_INVALID",
             ),
             (
                 lambda: validate_bounds_and_overlap(layout, overlay_plan),
                 "GEOMETRY_BOUNDS_INVALID",
-            ),
-            (
-                lambda: validate_leader_policy(source, layout, overlay_plan),
-                "GEOMETRY_LEADER_INVALID",
             ),
             (
                 lambda: validate_continuation_and_sizes(
@@ -446,7 +440,7 @@ def run_mechanical_qa(
             ),
         )
         for (identifier, category), (callback, fallback) in zip(
-            _GATES[1:15], callbacks, strict=True
+            _GATES[1:14], callbacks, strict=True
         ):
             checks.append(
                 _check(identifier, category, callback, fallback_code=fallback)
@@ -465,7 +459,7 @@ def run_mechanical_qa(
         except Exception as exc:
             raster_error = getattr(exc, "code", "RASTER_PDFIUM_FAILED")
         if raster_audit is None:
-            for identifier, category in _GATES[15:]:
+            for identifier, category in _GATES[14:]:
                 checks.append(
                     {
                         "id": identifier,
@@ -487,7 +481,7 @@ def run_mechanical_qa(
                 (raster_audit.pages_sane, "RASTER_PAGE_SANITY_FAILED"),
             )
             for (identifier, category), (passed, code) in zip(
-                _GATES[15:], raster_results, strict=True
+                _GATES[14:], raster_results, strict=True
             ):
                 checks.append(
                     {

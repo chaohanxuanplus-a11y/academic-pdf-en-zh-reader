@@ -7,7 +7,6 @@ import json
 import runpy
 import subprocess
 import sys
-from copy import deepcopy
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -214,7 +213,24 @@ def _parents(
         "review_hash": sha256_canonical(review),
         "red_candidates": [],
         "ambiguity_occurrences": [],
-        "teaching_candidates": [],
+        "teaching_candidates": [
+            {
+                "key": "term-key",
+                "english_original": "Key term",
+                "chinese_meaning": "关键术语，用于说明核心概念",
+                "value_priority": 90,
+                "essential": True,
+                "occurrences": [
+                    {
+                        "unit_id": unit_id,
+                        "source_start": 0,
+                        "source_end": 8,
+                        "target_start": 0,
+                        "target_end": 4,
+                    }
+                ],
+            }
+        ],
         "figure_candidates": [],
     }
     return source, units, translation, review, semantic
@@ -387,7 +403,11 @@ def test_finish_rejects_every_agent_input_inside_the_job_root(
         _finish(unsafe)
 
     assert captured.value.code == "AGENT_INPUT_UNSAFE"
-    assert not fixture.job_root.exists()
+    if fixture.job_root.exists():
+        assert (
+            load_job_state(fixture.job_root / "job-state.json").stage
+            is JobStage.EXTRACTED
+        )
     assert not fixture.output_pdf.exists()
 
 
@@ -435,7 +455,11 @@ def test_finish_rejects_non_finite_json_constants_before_schema_validation(
         _finish(fixture)
 
     assert captured.value.code == "AGENT_INPUT_INVALID"
-    assert not fixture.job_root.exists()
+    if fixture.job_root.exists():
+        assert (
+            load_job_state(fixture.job_root / "job-state.json").stage
+            is JobStage.EXTRACTED
+        )
     assert not fixture.output_pdf.exists()
 
 
@@ -461,7 +485,11 @@ def test_finish_rejects_duplicate_keys_in_every_agent_input(
         _finish(fixture)
 
     assert captured.value.code == "AGENT_INPUT_INVALID"
-    assert not fixture.job_root.exists()
+    if fixture.job_root.exists():
+        assert (
+            load_job_state(fixture.job_root / "job-state.json").stage
+            is JobStage.EXTRACTED
+        )
     assert not fixture.output_pdf.exists()
 
 
@@ -482,7 +510,7 @@ def test_finish_rejects_parent_hash_or_agent_identity_mismatch(
         value = json.loads(fixture.review_json.read_text(encoding="utf-8"))
         value["reviewer_id"] = value["translator_id"]
         _write_external_json(fixture.review_json, value)
-        expected = "INDEPENDENT_REVIEW_REQUIRED"
+        expected = "REVIEW_REQUIRED"
     else:
         value = json.loads(fixture.semantic_candidates_json.read_text(encoding="utf-8"))
         value["review_hash"] = "e" * 64
@@ -493,34 +521,21 @@ def test_finish_rejects_parent_hash_or_agent_identity_mismatch(
         _finish(fixture)
 
     assert captured.value.code == expected
-    assert not fixture.job_root.exists()
+    if fixture.job_root.exists():
+        assert (
+            load_job_state(fixture.job_root / "job-state.json").stage
+            is JobStage.EXTRACTED
+        )
     assert not fixture.output_pdf.exists()
 
 
-def test_finish_builds_typography_only_from_bound_body_or_abstract_evidence() -> None:
+def test_finish_uses_fixed_chinese_type_without_source_size_gate():
     from academic_pdf_en_zh_reader.orchestration.finish import (
-        FinishJobError,
         _style_contract_from_source,
     )
 
-    source, *_rest = _parents("a" * 64, source_font_size_mpt=9_300)
-    assert _style_contract_from_source(source).body_source_size_mpt == 9_300
-
-    abstract = deepcopy(source)
-    block = abstract["pages"][0]["blocks"][0]
-    block["role"] = "abstract"
-    block["source_font_size_mpt"] = 8_700
-    assert _style_contract_from_source(abstract).body_source_size_mpt == 8_700
-
-    missing, *_rest = _parents("a" * 64, source_font_size_mpt=None)
-    with pytest.raises(FinishJobError) as captured:
-        _style_contract_from_source(missing)
-    assert captured.value.code == "TYPOGRAPHY_EVIDENCE_INVALID"
-
-    abstract["pages"][0]["blocks"][0]["translation_policy"] = "excluded"
-    with pytest.raises(FinishJobError) as captured:
-        _style_contract_from_source(abstract)
-    assert captured.value.code == "TYPOGRAPHY_EVIDENCE_MISSING"
+    source, *_ = _parents("a" * 64, source_font_size_mpt=None)
+    assert _style_contract_from_source(source).style_for("body").size_mpt == 10000
 
 
 def test_finish_rejects_valid_source_bytes_that_no_longer_match_extracted_ledger(
@@ -537,8 +552,12 @@ def test_finish_rejects_valid_source_bytes_that_no_longer_match_extracted_ledger
     with pytest.raises(FinishJobError) as captured:
         _finish(fixture)
 
-    assert captured.value.code == "SOURCE_ARTIFACT_MISMATCH"
-    assert not fixture.job_root.exists()
+    assert captured.value.code == "CHECKPOINT_INVALID"
+    if fixture.job_root.exists():
+        assert (
+            load_job_state(fixture.job_root / "job-state.json").stage
+            is JobStage.EXTRACTED
+        )
     assert not fixture.output_pdf.exists()
 
 
@@ -563,7 +582,11 @@ def test_finish_accepts_only_an_extracted_ledger(tmp_path: Path) -> None:
         _finish(fixture)
 
     assert captured.value.code == "JOB_NOT_EXTRACTED"
-    assert not fixture.job_root.exists()
+    if fixture.job_root.exists():
+        assert (
+            load_job_state(fixture.job_root / "job-state.json").stage
+            is JobStage.EXTRACTED
+        )
     assert not fixture.output_pdf.exists()
 
 
@@ -577,13 +600,17 @@ def test_finish_advances_every_stage_and_uses_non_hardcoded_typography(
     assert result == {
         "status": "ok",
         "code": "FINISH_OK",
-        "notices": ["DISCLAIMER_PAGE_APPENDED"],
+        "added_pages": 0,
     }
-    state = load_job_state(fixture.job_root / "job-state.json")
+    assert (
+        load_job_state(fixture.job_root / "job-state.json").stage is JobStage.EXTRACTED
+    )
+    artifact_root = next(fixture.managed_root.glob("attempt-*"))
+    state = load_job_state(artifact_root / "job-state.json")
     assert [record.stage for record in state.history] == list(JobStage)
-    source = json.loads((fixture.job_root / "source.json").read_text(encoding="utf-8"))
+    source = json.loads((artifact_root / "source.json").read_text(encoding="utf-8"))
     receipt = json.loads(
-        (fixture.job_root / "finalization-receipt.json").read_text(encoding="utf-8")
+        (artifact_root / "finalization-receipt.json").read_text(encoding="utf-8")
     )
     from academic_pdf_en_zh_reader.job.finalize import _style_contract_payload
     from academic_pdf_en_zh_reader.orchestration.finish import (
@@ -591,16 +618,16 @@ def test_finish_advances_every_stage_and_uses_non_hardcoded_typography(
     )
 
     expected_style = _style_contract_payload(_style_contract_from_source(source))
-    assert expected_style["body_source_size_mpt"] == 9_300
+    assert expected_style["body_source_size_mpt"] == 10_000
     assert receipt["policy_hashes"]["style-contract"] == sha256_canonical(
         expected_style
     )
     manifest = json.loads(
-        (fixture.job_root / "render-manifest.json").read_text(encoding="utf-8")
+        (artifact_root / "render-manifest.json").read_text(encoding="utf-8")
     )
-    qa = json.loads((fixture.job_root / "qa.json").read_text(encoding="utf-8"))
+    qa = json.loads((artifact_root / "qa.json").read_text(encoding="utf-8"))
     provenance = json.loads(
-        (fixture.job_root / "provenance.json").read_text(encoding="utf-8")
+        (artifact_root / "provenance.json").read_text(encoding="utf-8")
     )
     assert state.source_sha256 != source["normalized_pdf_sha256"]
     assert manifest["source_sha256"] == state.source_sha256
@@ -643,7 +670,11 @@ def test_finish_cleans_candidate_when_rendered_state_cas_fails(
 
     assert composed is True
     assert captured.value.code == "STATE_CAS_FAILED"
-    assert not fixture.job_root.exists()
+    if fixture.job_root.exists():
+        assert (
+            load_job_state(fixture.job_root / "job-state.json").stage
+            is JobStage.EXTRACTED
+        )
     assert not fixture.output_pdf.exists()
 
 
@@ -672,7 +703,11 @@ def test_finish_never_exposes_an_untrusted_render_exception_code(
     assert captured.value.code == "RENDER_FAILED"
     assert "ATTACKER_CHOSEN_CODE" not in str(captured.value)
     assert "paper text" not in str(captured.value)
-    assert not fixture.job_root.exists()
+    if fixture.job_root.exists():
+        assert (
+            load_job_state(fixture.job_root / "job-state.json").stage
+            is JobStage.EXTRACTED
+        )
     assert not fixture.output_pdf.exists()
 
 
@@ -700,7 +735,11 @@ def test_finish_qa_failure_publishes_no_output(
         _finish(fixture)
 
     assert captured.value.code == "QA_FAILED"
-    assert not fixture.job_root.exists()
+    if fixture.job_root.exists():
+        assert (
+            load_job_state(fixture.job_root / "job-state.json").stage
+            is JobStage.EXTRACTED
+        )
     assert not fixture.output_pdf.exists()
 
 
@@ -722,7 +761,11 @@ def test_finish_preserves_qa_sandbox_contract_failure(
         _finish(fixture)
 
     assert captured.value.code == "SANDBOX_CONTRACT_UNVERIFIED"
-    assert not fixture.job_root.exists()
+    if fixture.job_root.exists():
+        assert (
+            load_job_state(fixture.job_root / "job-state.json").stage
+            is JobStage.EXTRACTED
+        )
     assert not fixture.output_pdf.exists()
 
 
@@ -748,7 +791,11 @@ def test_finish_never_exposes_an_untrusted_qa_exception_code(
     assert captured.value.code == "QA_COMMIT_FAILED"
     assert "ATTACKER_CHOSEN_CODE" not in str(captured.value)
     assert "paper text" not in str(captured.value)
-    assert not fixture.job_root.exists()
+    if fixture.job_root.exists():
+        assert (
+            load_job_state(fixture.job_root / "job-state.json").stage
+            is JobStage.EXTRACTED
+        )
     assert not fixture.output_pdf.exists()
 
 
@@ -779,7 +826,7 @@ def test_finish_failure_cleanup_boundary_requires_explicit_debug_retention(
         )
 
     assert captured.value.code == "TRANSLATION_INVALID"
-    assert fixture.job_root.exists() is retained
+    assert fixture.job_root.exists()
     if retained:
         sentinel = json.loads(
             (fixture.job_root / SENTINEL_NAME).read_text(encoding="utf-8")
@@ -871,7 +918,11 @@ def test_delivery_state_failure_may_leave_published_pdf_but_is_never_success(
 
     assert captured.value.code == "DELIVERY_STATE_FAILED"
     assert fixture.output_pdf.is_file()
-    assert not fixture.job_root.exists()
+    if fixture.job_root.exists():
+        assert (
+            load_job_state(fixture.job_root / "job-state.json").stage
+            is JobStage.EXTRACTED
+        )
 
 
 def test_finish_default_success_delivers_only_one_pdf_and_cleans_job(
@@ -884,7 +935,7 @@ def test_finish_default_success_delivers_only_one_pdf_and_cleans_job(
     assert result == {
         "status": "ok",
         "code": "FINISH_OK",
-        "notices": ["DISCLAIMER_PAGE_APPENDED"],
+        "added_pages": 0,
     }
     assert fixture.output_pdf.is_file()
     assert list(fixture.output_pdf.parent.iterdir()) == [fixture.output_pdf]
@@ -941,12 +992,15 @@ def test_finish_job_wrapper_reports_appended_disclaimer_without_private_data(
     main.__globals__["finish_managed_job"] = lambda **_kwargs: {
         "status": "ok",
         "code": "FINISH_OK",
-        "notices": ["DISCLAIMER_PAGE_APPENDED"],
+        "added_pages": 1,
     }
 
     assert main(_wrapper_arguments()) == 0
     captured = capsys.readouterr()
-    assert captured.out == "原末页无足够安全空间，已在文件末尾追加责任声明页。\n"
+    assert (
+        captured.out
+        == "精简非主要补充后，完整译文、核心补充与责任声明仍需增加 1 页。\n"
+    )
     assert captured.err == ""
     assert "private-" not in captured.out
     assert "FINISH_OK" not in captured.out

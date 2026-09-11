@@ -170,7 +170,7 @@ def test_complete_artifact_rebinds_ratios_selection_and_parent_hashes(
         teaching_candidates=(),
         mandatory_items=(*red.items, *marks),
         auxiliary_size_mpt=style.style_for("auxiliary").size_mpt,
-        trial_layout=lambda _: LayoutTrialResult(True, 0),
+        trial_layout=lambda _: LayoutTrialResult(True, 0, 1, 1),
     )
     artifact = orange.to_artifact(
         units=units,

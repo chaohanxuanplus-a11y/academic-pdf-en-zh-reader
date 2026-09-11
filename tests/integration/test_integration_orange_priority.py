@@ -56,8 +56,17 @@ def _candidates(source, units, translation):
         chinese_meaning="普通橙色教学说明" * 1_000,
         occurrences=(TeachingOccurrence(body["id"], 0, 3, 0, 1),),
         value_priority=1_000,
+        essential=False,
     )
-    return (figure,), (teaching,)
+    core = TeachingCandidate(
+        "core-term",
+        body["source_text"][4:7],
+        "核心词汇",
+        (TeachingOccurrence(body["id"], 4, 7, 1, 2),),
+        100,
+        True,
+    )
+    return (figure,), (teaching, core)
 
 
 def test_figure_or_table_orange_precedes_and_survives_ordinary_orange_pressure(
@@ -70,9 +79,9 @@ def test_figure_or_table_orange_precedes_and_survives_ordinary_orange_pressure(
     )
     items = case.annotations["items"]
 
-    assert [item["kind"] for item in items] == ["figure-table-reading"]
-    assert items[0]["content"] in {
-        "合成图形仅用于检验图注与图区的对应关系。",
-        "合成图形仅用于排版检验。",
+    assert {item["kind"] for item in items} == {
+        "figure-table-reading",
+        "dark-orange-teaching",
     }
-    assert not any(item["kind"] == "dark-orange-teaching" for item in items)
+    assert all(item["essential"] for item in items)
+    assert all(len(item["content"]) < 100 for item in items)

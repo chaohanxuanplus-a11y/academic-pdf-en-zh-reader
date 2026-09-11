@@ -8,7 +8,6 @@ from academic_pdf_en_zh_reader.layout.frame_graph import build_frame_graph
 from academic_pdf_en_zh_reader.typography.font_registry import load_font_registry
 from academic_pdf_en_zh_reader.typography.font_runs import FontRunResolver
 from academic_pdf_en_zh_reader.typography.style_contract import (
-    FontSizeSample,
     build_style_contract,
 )
 
@@ -202,137 +201,29 @@ def _cross_page_inputs() -> tuple[
     return source, units, translation
 
 
-def test_cross_column_unit_has_one_unsplit_initial_part() -> None:
-    source, units, translation, _chinese = _inputs()
-    styles = build_style_contract(
-        (FontSizeSample(size_mpt=10_000, character_count=500),)
-    )
-    graph = build_frame_graph(
-        source,
-        units,
-        translation,
-        style_contract=styles,
-        resolver=FontRunResolver(load_font_registry()),
-    )
-
-    flow = graph["unit_flows"][0]
-    part = graph["unit_parts"][0]
-    assert len(graph["unit_parts"]) == 1
-    assert len(flow["allowed_native_frame_ids"]) == 2
-    assert part["frame_id"] == flow["home_frame_id"]
-    assert (part["line_start"], part["line_end"]) == (0, flow["line_count"])
-    assert (part["source_fragment_start"], part["source_fragment_end"]) == (0, 2)
-    assert part["is_first_part"] is True
-    assert part["creates_anchor"] is True
-    assert flow["anchor"]["kind"] == "soft-y"
-    assert flow["anchor"]["source_visual_center_offset_mpt"] == 841_890 - 60_000
-
-
-def test_line_offsets_cover_translation_exactly_despite_removed_line_end_spaces() -> (
-    None
-):
+def test_cross_column_source_fragments_share_one_continuous_target():
     source, units, translation, chinese = _inputs()
-    styles = build_style_contract(
-        (FontSizeSample(size_mpt=10_000, character_count=500),)
-    )
     graph = build_frame_graph(
         source,
         units,
         translation,
-        style_contract=styles,
+        style_contract=build_style_contract(()),
         resolver=FontRunResolver(load_font_registry()),
     )
-
     flow = graph["unit_flows"][0]
-    lines = flow["lines"]
-    assert len(lines) > 1
-    assert lines[0]["target_start"] == 0
-    assert lines[-1]["target_end"] == len(chinese)
-    assert all(
-        left["target_end"] == right["target_start"]
-        for left, right in zip(lines, lines[1:], strict=False)
-    )
-    assert all(
-        line["text"] == chinese[line["target_start"] : line["target_end"]].strip()
-        for line in lines
-    )
-
-    frames = {
-        frame["id"]: frame
-        for frame in graph["pages"][0]["frames"]
-        if frame["kind"] == "native"
-    }
-    minimum_width = min(
-        frames[identifier]["text_right_mpt"] - frames[identifier]["text_left_mpt"]
-        for identifier in flow["allowed_native_frame_ids"]
-    )
-    assert all(line["width_mpt"] <= minimum_width for line in lines)
+    assert flow["column_count"] == 2
+    assert flow["source_page_numbers"] == [1]
+    assert flow["lines"][-1]["target_end"] == len(chinese)
 
 
-def test_line_hashes_bind_fixed_style_metrics_and_exact_resolved_runs() -> None:
-    source, units, translation, _chinese = _inputs()
-    styles = build_style_contract(
-        (FontSizeSample(size_mpt=10_000, character_count=500),)
-    )
-    graph = build_frame_graph(
-        source,
-        units,
-        translation,
-        style_contract=styles,
-        resolver=FontRunResolver(load_font_registry()),
-    )
-
-    flow = graph["unit_flows"][0]
-    body_style = styles.style_for("body")
-    assert flow["style"] == {
-        "style_id": (
-            f"typography-v1:body:{body_style.font_role}:"
-            f"{body_style.size_mpt}:{body_style.line_height_mpt}"
-        ),
-        "semantic_role": "body",
-        "font_role": body_style.font_role,
-        "size_mpt": body_style.size_mpt,
-        "line_height_mpt": body_style.line_height_mpt,
-    }
-    for line in flow["lines"]:
-        assert "".join(run["text"] for run in line["runs"]) == line["text"]
-        payload = {key: value for key, value in line.items() if key != "line_box_hash"}
-        assert line["line_box_hash"] == sha256_canonical(
-            {"line_box_contract_version": "1.0.0", **payload}
-        )
-    assert flow["line_sequence_hash"] == sha256_canonical(
-        {"style": flow["style"], "lines": flow["lines"]}
-    )
-    assert [face["role"] for face in graph["font_fingerprint"]] == [
-        "body",
-        "heading",
-        "symbols",
-    ]
-
-
-def test_cross_page_fragments_expand_allowlist_without_splitting_target() -> None:
+def test_cross_page_source_fragments_preserve_semantic_page_set():
     source, units, translation = _cross_page_inputs()
-    styles = build_style_contract(
-        (FontSizeSample(size_mpt=10_000, character_count=500),)
-    )
     graph = build_frame_graph(
         source,
         units,
         translation,
-        style_contract=styles,
+        style_contract=build_style_contract(()),
         resolver=FontRunResolver(load_font_registry()),
     )
-
-    flow = graph["unit_flows"][0]
-    part = graph["unit_parts"][0]
-    frames = {frame["id"]: frame for page in graph["pages"] for frame in page["frames"]}
-    assert [
-        (
-            frames[identifier]["source_page_number"],
-            frames[identifier]["source_column_id"],
-        )
-        for identifier in flow["allowed_native_frame_ids"]
-    ] == [(1, "left"), (2, "page-two-col")]
-    assert flow["continuation_owner_page_number"] == 2
-    assert len(graph["unit_parts"]) == 1
-    assert (part["line_start"], part["line_end"]) == (0, flow["line_count"])
+    assert graph["unit_flows"][0]["source_page_numbers"] == [1, 2]
+    assert len(graph["unit_flows"]) == 1

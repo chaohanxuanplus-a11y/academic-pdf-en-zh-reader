@@ -3,6 +3,8 @@
 
 from __future__ import annotations
 
+import pytest
+
 from academic_pdf_en_zh_reader.job.hashing import sha256_canonical
 from academic_pdf_en_zh_reader.review.semantic_checks import (
     check_mechanical_semantics,
@@ -281,3 +283,73 @@ def test_physical_binding_can_preserve_association_marker() -> None:
     target = "淋巴细胞与巨噬细胞结合。"
 
     assert _categories(source, target) == set()
+
+
+@pytest.mark.parametrize("apostrophe", ["'", "’"])
+def test_possessive_suffix_is_not_seconds(apostrophe: str) -> None:
+    assert (
+        _categories(
+            f"The particle{apostrophe}s surface was examined.", "检查了颗粒表面。"
+        )
+        == set()
+    )
+    assert "unit" in _categories("The duration was 8 s.", "持续时间为8。")
+
+
+def test_correlative_higher_and_explicit_chinese_contrast() -> None:
+    assert (
+        _categories("A smaller error yields higher accuracy.", "误差越小，准确性越高。")
+        == set()
+    )
+    assert (
+        _categories("A was stable whereas B changed.", "A稳定，而另一组B发生变化。")
+        == set()
+    )
+    assert "logic" in _categories(
+        "A was stable whereas B changed.", "A稳定，而且B发生变化。"
+    )
+    assert "direction" in _categories("Accuracy was higher.", "准确性越低。")
+
+
+@pytest.mark.parametrize(
+    ("source", "target"),
+    [
+        ("The score was below 0.6.", "评分低于0.6。"),
+        ("The score was above 0.6.", "评分高于0.6。"),
+        ("Values exceed- ing 7 were selected.", "选择了超过7的值。"),
+        ("Values not exceeding 7 were selected.", "选择了不超过7的值。"),
+        ("Efficiency improved by at least 60%.", "效率至少提高60%。"),
+        ("Efficiency improved by more than 60%.", "效率提高超过60%。"),
+    ],
+)
+def test_common_bounded_inequality_wording(source: str, target: str) -> None:
+    assert _categories(source, target) == set()
+
+
+def test_new_inequality_aliases_keep_operator_and_value_binding() -> None:
+    assert "inequality" in _categories("The score was below 0.6.", "评分高于0.6。")
+    assert "inequality" in _categories("The change was at least 60%.", "变化超过60%。")
+    assert "inequality" in _categories(
+        "The change was at least 60%.", "变化至少提高50%。"
+    )
+
+
+def test_chinese_numeric_transition_retains_shared_unit_and_endpoints() -> None:
+    source = "The rate changed from 0.3 to 12.4 mm·a−1."
+    assert _categories(source, "速率可从0.3 mm·a−1加速至12.4 mm·a−1。") == set()
+    assert "range" in _categories(source, "速率可从12.4 mm·a−1加速至0.3 mm·a−1。")
+
+
+def test_comparison_allows_a_bounded_long_named_subject_not_another_sentence() -> None:
+    subject = "用于预测A–0.2B实验材料变化的" + "ABCDE、" * 10 + "等模型"
+    assert (
+        _categories(
+            "Compared with reference models for A–0.2B, the fit was stable.",
+            f"与{subject}相比，拟合稳定。",
+        )
+        == set()
+    )
+    assert "logic" in _categories(
+        "Compared with reference models, the fit was stable.",
+        "与基准模型不同。另一实验中相比，拟合稳定。",
+    )

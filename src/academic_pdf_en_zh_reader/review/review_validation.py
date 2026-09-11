@@ -178,7 +178,7 @@ def _translation_unit_ids(translation: Mapping[str, object]) -> tuple[str, ...]:
     return identifiers
 
 
-def validate_independent_review(
+def validate_review(
     translation: Mapping[str, object],
     review: Mapping[str, object],
 ) -> ReviewGateResult:
@@ -206,7 +206,7 @@ def validate_independent_review(
         raise ReviewValidationError(
             "review translator_id does not match the translation batch"
         )
-    if batch_translator == reviewer:
+    if review["reviewer_role"] == "independent" and batch_translator == reviewer:
         raise ReviewValidationError(
             "translator and independent reviewer must be distinct"
         )
@@ -222,7 +222,8 @@ def validate_independent_review(
     if (
         not isinstance(reviewed, Sequence)
         or isinstance(reviewed, (str, bytes))
-        or tuple(reviewed) != unit_ids
+        or (review["reviewer_role"] == "independent" and tuple(reviewed) != unit_ids)
+        or tuple(reviewed) != tuple(uid for uid in unit_ids if uid in reviewed)
     ):
         raise ReviewValidationError(
             "reviewed unit IDs must match translation once and in order"
@@ -240,7 +241,7 @@ def validate_independent_review(
         if identifier in issue_ids:
             raise ReviewValidationError("review issue IDs must be unique")
         issue_ids.add(identifier)
-        if issue["unit_id"] not in unit_ids:
+        if issue["unit_id"] not in reviewed:
             raise ReviewValidationError("review issue references an unknown unit")
         severity = issue["severity"]
         if severity == "hard_error":
@@ -283,7 +284,7 @@ def validate_independent_review(
         raise ReviewValidationError("review final_status must be passed")
     return ReviewGateResult(
         translation_hash=translation_hash,
-        reviewed_unit_ids=unit_ids,
+        reviewed_unit_ids=tuple(reviewed),
         unresolved_ambiguity_keys=tuple(ambiguity_keys),
         style_improvements=tuple(style_improvements),
     )

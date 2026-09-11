@@ -28,3 +28,6 @@ output/
 # Personal correction stores must remain outside the repository.
 *.corrections.sqlite3
 *.corrections.sqlite3-*
+
+# Local synthetic regression outputs
+.test-*/

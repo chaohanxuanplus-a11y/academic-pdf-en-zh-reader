@@ -86,6 +86,7 @@ def validate_unit_mapping(
     excluded = set(source_by_id) - required
     counts: Counter[str] = Counter()
     previous_order = -1
+    previous_unit_order = -1
 
     units = artifact.get("units")
     if not isinstance(units, Sequence) or isinstance(units, (str, bytes)):
@@ -99,6 +100,7 @@ def validate_unit_mapping(
         if not fragments:
             raise UnitMappingError("unit fragments must not be empty")
         mapped_blocks: list[dict[str, Any]] = []
+        fragment_order = -1
         for fragment in fragments:
             if not isinstance(fragment, Mapping):
                 raise UnitMappingError("unit fragment is invalid")
@@ -122,9 +124,14 @@ def validate_unit_mapping(
             if counts[block_id] > 1:
                 raise UnitMappingError("required source block is mapped more than once")
             reading_order = block["reading_order"]
-            if reading_order <= previous_order:
+            if reading_order <= fragment_order or (
+                unit.get("role") not in {"figure-caption", "table-caption"}
+                and reading_order <= previous_order
+            ):
                 raise UnitMappingError("unit fragments are not in source reading order")
-            previous_order = reading_order
+            fragment_order = reading_order
+            if unit.get("role") not in {"figure-caption", "table-caption"}:
+                previous_order = reading_order
 
         first = mapped_blocks[0]
         if unit.get("id") != first["id"]:
@@ -133,6 +140,26 @@ def validate_unit_mapping(
             raise UnitMappingError(
                 "unit reading order must equal its first source block reading order"
             )
+        if first["reading_order"] <= previous_unit_order:
+            raise UnitMappingError("units are not in source reading order")
+        previous_unit_order = first["reading_order"]
+        # A complete body paragraph may cross a floated caption. No other
+        # required role may be skipped or reordered between its fragments.
+        mapped_ids = {block["id"] for block in mapped_blocks}
+        if len(mapped_blocks) > 1:
+            for _page, block in records:
+                if (
+                    first["reading_order"]
+                    < block["reading_order"]
+                    < mapped_blocks[-1]["reading_order"]
+                    and block["translation_policy"] == "required"
+                    and block["id"] not in mapped_ids
+                    and not (
+                        unit.get("role") == "body"
+                        and block["role"] in {"figure-caption", "table-caption"}
+                    )
+                ):
+                    raise UnitMappingError("unit skips required non-caption content")
         if unit.get("source_text") != joined_source_text(mapped_blocks):
             raise UnitMappingError("unit source text differs from its source blocks")
         if unit.get("confidence_ppm") != min(

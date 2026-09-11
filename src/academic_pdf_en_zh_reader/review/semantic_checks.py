@@ -24,20 +24,26 @@ _RANGE = re.compile(
     rf"({_NUMBER_CORE})(?![A-Za-z0-9])",
     re.I,
 )
+_CHINESE_TRANSITION_RANGE = re.compile(
+    rf"(?:从|由)\s*({_NUMBER_CORE})\s*"
+    r"(?:(?:mm|cm|m|s|h|%)(?:[·/](?:a|s|h)(?:[−-]?\d+)?)?\s*)?"
+    rf"(?:增加|提高|降低|减少|升高|下降|加速)?(?:至|到)\s*({_NUMBER_CORE})"
+)
 _SYMBOLIC_INEQUALITY = re.compile(
     rf"(?P<operator><=|>=|<|>|\u2264|\u2265)\s*(?P<number>{_NUMBER_CORE})"
 )
 _WORD_INEQUALITY = re.compile(
     rf"(?P<operator>no\s+less\s+than|no\s+more\s+than|at\s+least|at\s+most|"
-    rf"greater\s+than|more\s+than|less\s+than|"
+    rf"greater\s+than|more\s+than|less\s+than|above|below|"
+    rf"not\s+exceed(?:-\s*)?ing|exceed(?:-\s*)?ing|"
     rf"\u4e0d\u5c11\u4e8e|\u4e0d\u4f4e\u4e8e|\u81f3\u5c11|"
     rf"\u4e0d\u8d85\u8fc7|\u4e0d\u9ad8\u4e8e|\u81f3\u591a|"
-    rf"\u5927\u4e8e|\u9ad8\u4e8e|\u5c0f\u4e8e|\u4f4e\u4e8e)"
-    rf"\s*(?P<number>{_NUMBER_CORE})",
+    rf"\u5927\u4e8e|\u9ad8\u4e8e|\u5c0f\u4e8e|\u4f4e\u4e8e|超过)"
+    rf"\s*(?:提高|增加|减少|降低|为)?\s*(?P<number>{_NUMBER_CORE})",
     re.I,
 )
 _UNIT = re.compile(
-    r"(?<![A-Za-z])(?:%|\u00b0C|\u2103|k?Pa|MPa|kg|mg|\u03bcg|\u00b5g|ug|mm|cm|\u03bcm|\u00b5m|um|nm|mL|mmol/L|mol/L|Hz|m/s|min|h|s|K|L)(?![A-Za-z])"
+    r"(?<![A-Za-z'’])(?:%|\u00b0C|\u2103|k?Pa|MPa|kg|mg|\u03bcg|\u00b5g|ug|mm|cm|\u03bcm|\u00b5m|um|nm|mL|mmol/L|mol/L|Hz|m/s|min|h|s|K|L)(?![A-Za-z])"
 )
 _CITATION = re.compile(
     r"\[[0-9,;\s\u2013\u2014-]+\]|"
@@ -155,7 +161,13 @@ _DIRECTION = {
         r"\u964d\u4f4e",
         r"\u4e0b\u964d",
     ),
-    "higher": (r"\bhigher\b", r"\u66f4\u9ad8", r"\u8f83\u9ad8", r"\u9ad8\u4e8e"),
+    "higher": (
+        r"\bhigher\b",
+        r"\u66f4\u9ad8",
+        r"\u8f83\u9ad8",
+        r"\u9ad8\u4e8e",
+        r"越高",
+    ),
     "lower": (
         r"\blower\b",
         r"\u8f83?\u4f4e",
@@ -255,13 +267,14 @@ _LOGIC = {
         r"\u7136\u800c",
         r"\u4e0d\u8fc7",
         r"\u800c(?=[A-Za-z\u0370-\u03ff])",
+        r"而(?!且|后|今)(?=[\u3400-\u9fff])",
     ),
     "condition": (r"\bif\b", r"\bprovided that\b", r"\u5982\u679c", r"\u82e5"),
     "comparison": (
         r"\bcompared with\b",
         r"\bversus\b",
         r"\u76f8\u8f83(?:\u4e8e)?",
-        r"\u4e0e[^\u3002\uff01\uff1f.!?]{0,40}\u76f8\u6bd4",
+        r"\u4e0e(?:[^\u3002\uff01\uff1f.!?]|(?<=\d)\.(?=\d)){0,120}\u76f8\u6bd4",
         r"\u6bd4[^\u3002\uff01\uff1f.!?]{0,30}(?:\u66f4|\u8f83|\u9ad8|\u4f4e|\u591a|\u5c11|\u5927|\u5c0f)",
         r"(?<!\u6bd4)\u8f83(?=[^\u3002\uff01\uff1f.!?]{0,20}(?:\u589e\u52a0|\u51cf\u5c11|\u5347\u9ad8|\u964d\u4f4e|\u9ad8|\u4f4e|\u591a|\u5c11|\u5927|\u5c0f))",
     ),
@@ -379,6 +392,10 @@ def _ranges(text: str) -> tuple[str, ...]:
         for match in _RANGE.finditer(range_text)
     }
     markers.update(
+        f"{_normalize_number(match.group(1))}:{_normalize_number(match.group(2))}"
+        for match in _CHINESE_TRANSITION_RANGE.finditer(range_text)
+    )
+    markers.update(
         f"{_ENGLISH_NUMBER_WORDS[match.group('start').casefold()]}:"
         f"{_ENGLISH_NUMBER_WORDS[match.group('end').casefold()]}"
         for match in _WORD_RANGE.finditer(range_text)
@@ -406,9 +423,14 @@ def _inequalities(text: str) -> tuple[str, ...]:
         "\u81f3\u591a": "<=",
         "greater than": ">",
         "more than": ">",
+        "above": ">",
+        "exceeding": ">",
+        "not exceeding": "<=",
+        "超过": ">",
         "\u5927\u4e8e": ">",
         "\u9ad8\u4e8e": ">",
         "less than": "<",
+        "below": "<",
         "\u5c0f\u4e8e": "<",
         "\u4f4e\u4e8e": "<",
     }
@@ -416,6 +438,7 @@ def _inequalities(text: str) -> tuple[str, ...]:
     for pattern in (_SYMBOLIC_INEQUALITY, _WORD_INEQUALITY):
         for match in pattern.finditer(text):
             operator = " ".join(match.group("operator").casefold().split())
+            operator = re.sub(r"-\s*", "", operator)
             markers.append(
                 f"{canonical_operators[operator]}:{_normalize_number(match.group('number'))}"
             )
@@ -594,3 +617,42 @@ def check_mechanical_semantics(
                     )
                 )
     return tuple(issues)
+
+
+def mechanical_issue_hash(issue, units, translation):
+    """Bind a diagnostic to the exact source and translation of its unit."""
+    from dataclasses import asdict
+
+    from academic_pdf_en_zh_reader.job.hashing import sha256_canonical
+
+    source = next(u["source_text"] for u in units["units"] if u["id"] == issue.unit_id)
+    target = next(
+        u["chinese_text"] for u in translation["units"] if u["unit_id"] == issue.unit_id
+    )
+    return sha256_canonical(
+        {"issue": asdict(issue), "source": source, "target": target}
+    )
+
+
+def unresolved_mechanical_issues(units, translation, review):
+    """Accept specific, text-bound resolutions only for heuristic language flags."""
+
+    issues = check_mechanical_semantics(units, translation)
+    by_hash = {
+        mechanical_issue_hash(issue, units, translation): issue for issue in issues
+    }
+    resolved = set()
+    for item in review.get("mechanical_resolutions", []):
+        issue = by_hash.get(item["issue_hash"])
+        if (
+            issue is None
+            or issue.unit_id != item["unit_id"]
+            or issue.unit_id not in review["reviewed_unit_ids"]
+            or issue.category
+            not in {"unit", "direction", "negation", "degree", "logic"}
+            or not item["reason"].strip()
+            or item["issue_hash"] in resolved
+        ):
+            raise ValueError("invalid or stale mechanical resolution")
+        resolved.add(item["issue_hash"])
+    return tuple(issue for key, issue in by_hash.items() if key not in resolved)

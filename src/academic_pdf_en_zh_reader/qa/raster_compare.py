@@ -11,7 +11,7 @@ from io import BytesIO
 from pathlib import Path
 
 import pypdfium2 as pdfium
-from PIL import Image, ImageChops, ImageDraw
+from PIL import Image, ImageChops
 
 from academic_pdf_en_zh_reader.qa.page_contract import source_manifest_pages
 from academic_pdf_en_zh_reader.rendering.page_geometry import A4_WIDTH_MPT
@@ -38,7 +38,6 @@ class RasterPolicy:
     max_pixels_per_page: int = 12_000_000
     pixel_delta_threshold: int = 12
     max_unmasked_changed_ppm: int = 250
-    leader_mask_padding_px: int = 3
     minimum_nonwhite_ppm: int = 10
     maximum_black_ppm: int = 750_000
     maximum_edge_ink_ppm: int = 200_000
@@ -54,7 +53,6 @@ class RasterPolicy:
             or self.max_pixels_per_page < 1
             or not 0 <= self.pixel_delta_threshold <= 255
             or not 0 <= self.max_unmasked_changed_ppm <= 1_000_000
-            or self.leader_mask_padding_px < 0
             or not 0 <= self.minimum_nonwhite_ppm <= 1_000_000
             or not 0 <= self.maximum_black_ppm <= 1_000_000
             or not 0 <= self.maximum_edge_ink_ppm <= 1_000_000
@@ -90,65 +88,11 @@ def _render_page(document: object, index: int, *, scale: float) -> Image.Image:
             page.close()
 
 
-def _point_to_pixel(
-    point: object, *, scale: float, image_height: int
-) -> tuple[int, int]:
-    if (
-        not isinstance(point, list)
-        or len(point) != 2
-        or any(type(value) is not int for value in point)
-    ):
-        raise RasterQaError("RASTER_LEADER_MASK_INVALID")
-    return (
-        round(point[0] * scale / 1000),
-        image_height - round(point[1] * scale / 1000),
-    )
-
-
-def _leader_mask(
-    size: tuple[int, int],
-    plan_page: Mapping[str, object],
-    *,
-    scale: float,
-    padding: int,
-) -> Image.Image:
-    mask = Image.new("L", size, 0)
-    draw = ImageDraw.Draw(mask)
-    routes = plan_page.get("leader_routes")
-    if not isinstance(routes, list):
-        raise RasterQaError("RASTER_LEADER_MASK_INVALID")
-    for route in routes:
-        try:
-            points = [
-                _point_to_pixel(point, scale=scale, image_height=size[1])
-                for point in route["points_mpt"]
-            ]
-            width = max(
-                1,
-                round(int(route["width_mpt"]) * scale / 1000) + 2 * padding,
-            )
-        except (KeyError, TypeError, ValueError) as exc:
-            raise RasterQaError("RASTER_LEADER_MASK_INVALID") from exc
-        # Crop coordinates naturally clip the route to the left A4 half. The
-        # mask follows only the frozen stroke path, not a broad rectangle.
-        draw.line(points, fill=255, width=width, joint="curve")
-        radius = width // 2
-        for x, y in points:
-            draw.ellipse((x - radius, y - radius, x + radius, y + radius), fill=255)
-    return mask
-
-
-def _changed_outside_mask(
-    source: Image.Image,
-    output_left: Image.Image,
-    mask: Image.Image,
-    *,
-    threshold: int,
-) -> int:
+def _changed_pixels(source, output_left, *, threshold):
     difference = ImageChops.difference(source, output_left).convert("L")
-    changed = difference.point(lambda value: 255 if value > threshold else 0)
-    outside = ImageChops.subtract(changed, mask)
-    return outside.histogram()[255]
+    return difference.point(lambda value: 255 if value > threshold else 0).histogram()[
+        255
+    ]
 
 
 def _page_sane(image: Image.Image, policy: RasterPolicy) -> bool:
@@ -276,16 +220,9 @@ def audit_full_page_rasters(
                         (0, 0, expected_left_width, source_image.height)
                     )
                     try:
-                        mask = _leader_mask(
-                            output_left.size,
-                            plan_page,
-                            scale=scale,
-                            padding=policy.leader_mask_padding_px,
-                        )
-                        changed = _changed_outside_mask(
+                        changed = _changed_pixels(
                             source_left,
                             output_left,
-                            mask,
                             threshold=policy.pixel_delta_threshold,
                         )
                         changed_total += changed

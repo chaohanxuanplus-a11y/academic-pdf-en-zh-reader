@@ -3,6 +3,14 @@
 
 from __future__ import annotations
 
+from copy import deepcopy
+
+import pytest
+
+from academic_pdf_en_zh_reader.extraction.unit_mapping import (
+    UnitMappingError,
+    validate_unit_mapping,
+)
 from academic_pdf_en_zh_reader.extraction.unit_merge import (
     UnitMergeStatus,
     build_semantic_units,
@@ -11,6 +19,31 @@ from academic_pdf_en_zh_reader.job.hashing import stable_source_id
 from academic_pdf_en_zh_reader.schema.validate import validate_artifact
 
 SHA = "a" * 64
+
+
+def test_parenthetical_infix_continues_across_a_column_boundary() -> None:
+    outcome = build_semantic_units(
+        _source("The forms were rounded", "(type one), and angular (type two).")
+    )
+    assert outcome.status is UnitMergeStatus.OK
+    assert outcome.artifact is not None
+    assert len(outcome.artifact["units"]) == 1
+    assert outcome.artifact["units"][0]["source_text"] == (
+        "The forms were rounded (type one), and angular (type two)."
+    )
+
+
+def test_unclosed_parenthetical_is_still_ambiguous() -> None:
+    outcome = build_semantic_units(_source("The forms were rounded", "(type one"))
+    assert outcome.status is UnitMergeStatus.NEEDS_UNIT_REVIEW
+
+
+def test_chemical_formula_is_a_lexical_continuation_not_a_new_heading() -> None:
+    outcome = build_semantic_units(
+        _source("The concentration was changed by adding", "NaCl to the solution.")
+    )
+    assert outcome.status is UnitMergeStatus.OK
+    assert len(outcome.artifact["units"]) == 1
 
 
 def _block(
@@ -133,6 +166,58 @@ def test_explicit_hyphenated_word_merges_when_left_column_ends_early() -> None:
     assert outcome.artifact["units"][0]["source_text"] == (
         "The response showed persistence over time."
     )
+
+
+def test_floating_caption_does_not_split_a_hyphenated_body_unit() -> None:
+    source = _source("The response showed per-", "sistence over time.")
+    page = source["pages"][0]
+    second = page["blocks"][1]
+    caption = dict(second)
+    caption.update(
+        id="caption", role="figure-caption", text="Figure 1. Response.", reading_order=1
+    )
+    caption["source_char_end"] = caption["source_char_start"] + len(caption["text"])
+    second["reading_order"] = 2
+    second["source_char_start"] = caption["source_char_end"]
+    second["source_char_end"] = second["source_char_start"] + len(second["text"])
+    second["id"] = stable_source_id(
+        page_number=1,
+        reading_order=2,
+        role="body",
+        source_char_start=second["source_char_start"],
+        source_char_end=second["source_char_end"],
+    )
+    caption["id"] = stable_source_id(
+        page_number=1,
+        reading_order=1,
+        role="figure-caption",
+        source_char_start=caption["source_char_start"],
+        source_char_end=caption["source_char_end"],
+    )
+    caption["target_graphic_id"] = "graphic"
+    page["graphic_nodes"] = [
+        {
+            "id": "graphic",
+            "kind": "figure",
+            "bbox_mpt": [315000, 700000, 555000, 750000],
+            "confidence_ppm": 990000,
+        }
+    ]
+    page["blocks"] = [page["blocks"][0], caption, second]
+    outcome = build_semantic_units(source)
+    assert outcome.status is UnitMergeStatus.OK
+    assert len(outcome.artifact["units"]) == 2
+    assert (
+        outcome.artifact["units"][0]["source_text"]
+        == "The response showed persistence over time."
+    )
+    assert outcome.artifact["units"][1]["role"] == "figure-caption"
+    tampered_source = deepcopy(source)
+    tampered_source["pages"][0]["blocks"][1]["role"] = "heading"
+    tampered = deepcopy(outcome.artifact)
+    tampered["units"][1]["role"] = "heading"
+    with pytest.raises(UnitMappingError, match="skips required non-caption"):
+        validate_unit_mapping(tampered_source, tampered)
 
 
 def test_sentence_end_indentation_list_and_quote_are_new_units() -> None:

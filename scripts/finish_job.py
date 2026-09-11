@@ -56,9 +56,20 @@ def main(argv: Sequence[str] | None = None) -> int:
         )
     except FinishJobError as exc:
         print(f"FINISH_ERROR {exc.stage} {exc.code}", file=sys.stderr)
+        if getattr(exc, "failure_codes", ()):
+            print("QA_FAILURE " + ",".join(exc.failure_codes), file=sys.stderr)
+        if getattr(exc, "recovery_action", None):
+            print(
+                f"RECOVER {exc.recovery_action}; "
+                "reuse extracted checkpoint and unchanged translation",
+                file=sys.stderr,
+            )
         return 2
-    if "DISCLAIMER_PAGE_APPENDED" in result.get("notices", []):
-        print("原末页无足够安全空间，已在文件末尾追加责任声明页。")
+    if result.get("added_pages", 0):
+        print(
+            "精简非主要补充后，完整译文、核心补充与责任声明"
+            f"仍需增加 {result['added_pages']} 页。"
+        )
     return 0
 
 

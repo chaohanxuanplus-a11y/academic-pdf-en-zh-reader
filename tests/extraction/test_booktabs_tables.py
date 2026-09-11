@@ -3,6 +3,8 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
+
 from academic_pdf_en_zh_reader.extraction.blocks import build_basic_blocks
 from academic_pdf_en_zh_reader.extraction.page_objects import (
     PageObjects,
@@ -105,6 +107,61 @@ def test_captioned_three_rule_table_is_detected_and_bound() -> None:
     assert all(line.container_kind == "table" for line in cells)
     assert all(line.body_eligible is False for line in cells)
     assert all(line.coverage_eligible is False for line in cells)
+
+
+def test_captioned_table_accepts_equivalent_thin_filled_rectangle_rules() -> None:
+    rules = tuple(
+        replace(
+            _rule(name, y),
+            source_kind="rect",
+            filled=True,
+            stroked=False,
+            bbox_mpt=(72_000, y - 300, 360_000, y + 300),
+        )
+        for name, y in (("top", 675_000), ("middle", 635_000), ("bottom", 580_000))
+    )
+    page = replace(_page(), rectangles=rules)
+    result = build_basic_blocks(
+        (page,), (PageTextLines(page_number=1, lines=_booktabs_lines()),)
+    ).pages[0]
+    assert len(result.graphic_regions) == 1
+    assert result.graphic_regions[0].kind == "table"
+    assert all(
+        line.container_kind == "table" for line in result.lines if line.id != "caption"
+    )
+
+
+def test_uncaptioned_filled_rectangle_rules_are_not_guessed_as_a_table() -> None:
+    rules = tuple(
+        replace(
+            _rule(name, y),
+            source_kind="rect",
+            filled=True,
+            bbox_mpt=(72_000, y - 300, 360_000, y + 300),
+        )
+        for name, y in (("top", 675_000), ("middle", 635_000), ("bottom", 580_000))
+    )
+    result = build_basic_blocks(
+        (replace(_page(), rectangles=rules),),
+        (PageTextLines(page_number=1, lines=_booktabs_lines(include_caption=False)),),
+    ).pages[0]
+    assert not result.graphic_regions
+
+
+def test_split_rule_segments_and_flat_path_form_one_captioned_table() -> None:
+    rules = tuple(
+        _rule(f"{row}-{col}", y, left, right)
+        for row, y in enumerate((675_000, 635_000))
+        for col, (left, right) in enumerate(
+            ((72_000, 170_000), (170_000, 260_000), (260_000, 360_000))
+        )
+    ) + (replace(_rule("bottom", 580_000), source_kind="curve"),)
+    result = build_basic_blocks(
+        (_page(*rules),), (PageTextLines(page_number=1, lines=_booktabs_lines()),)
+    ).pages[0]
+    assert len(result.graphic_regions) == 1
+    assert result.graphic_regions[0].kind == "table"
+    assert len(result.captions) == 1
 
 
 def test_long_captioned_table_keeps_uppercase_title_out_of_first_table_row() -> None:

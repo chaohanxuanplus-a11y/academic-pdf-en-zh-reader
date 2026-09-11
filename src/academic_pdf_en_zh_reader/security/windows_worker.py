@@ -618,6 +618,7 @@ _PROJECT_RUNTIME_FILES = (
     Path("extraction/__init__.py"),
     Path("extraction/blocks.py"),
     Path("extraction/page_objects.py"),
+    Path("extraction/runtime.py"),
     Path("extraction/repeated_marginals.py"),
     Path("extraction/text_lines.py"),
     Path("job/__init__.py"),
@@ -4176,6 +4177,65 @@ def _extraction_counts(pages: list[object]) -> dict[str, int]:
     return counts
 
 
+def _extraction_failure_summary(error: Exception) -> str:
+    """Identify trusted failing code, never exception text or PDF content."""
+    known_types = {
+        "ValueError",
+        "TypeError",
+        "KeyError",
+        "IndexError",
+        "AttributeError",
+        "RuntimeError",
+        "OverflowError",
+        "InvalidOperation",
+        "OSError",
+        "PermissionError",
+        "ImportError",
+        "ModuleNotFoundError",
+    }
+    kind = type(error).__name__
+    if kind not in known_types:
+        kind = "Exception"
+    locations: list[str] = []
+    trace = error.__traceback__
+    while trace is not None:
+        module = trace.tb_frame.f_globals.get("__name__", "")
+        if isinstance(module, str) and (
+            module in {"pdfplumber", "pdfminer", "cryptography", "PIL", "pypdfium2"}
+            or module.startswith(
+                (
+                    "academic_pdf_en_zh_reader.extraction.",
+                    "pdfplumber.",
+                    "pdfminer.",
+                    "cryptography.",
+                    "PIL.",
+                    "pypdfium2.",
+                )
+            )
+        ):
+            locations.append(f"{module.rsplit('.', 1)[-1]}:{trace.tb_lineno}")
+        trace = trace.tb_next
+    missing = getattr(error, "name", None)
+    module_hint = (
+        f"; module={missing}"
+        if missing
+        in {
+            "PIL",
+            "pdfplumber",
+            "pdfminer",
+            "cryptography",
+            "pypdfium2",
+            "typing_extensions",
+            "_cffi_backend",
+            "importlib.metadata",
+        }
+        else ""
+    )
+    return f"PDF extraction failed ({kind}{module_hint}; {' > '.join(locations[-6:])})"[
+        :512
+    ]
+
+
 def _run_extraction_request(
     request: WorkerRequest,
     limits: WorkerLimits,
@@ -4236,10 +4296,10 @@ def _run_extraction_request(
             "WORKER_LIMIT_EXCEEDED",
             "PDF extraction exceeded the worker memory limit",
         )
-    except Exception:
+    except Exception as error:
         return WorkerResponse.failed(
             "EXTRACTION_FAILED",
-            "PDF extraction failed",
+            _extraction_failure_summary(error),
         )
     pages = extracted.get("pages")
     if (

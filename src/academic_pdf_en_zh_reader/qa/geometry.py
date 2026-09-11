@@ -146,108 +146,16 @@ def validate_source_left_one_to_one(
     return {"source_placement_count": len(pages)}
 
 
-def _largest_remainder_ratios(widths: list[int]) -> list[int]:
-    total = sum(widths)
-    if total <= 0:
-        raise GeometryQaError("GEOMETRY_MIRROR_INVALID")
-    ratios = [width * 1_000_000 // total for width in widths]
-    remainder = 1_000_000 - sum(ratios)
-    order = sorted(
-        range(len(widths)),
-        key=lambda index: (-(widths[index] * 1_000_000 % total), index),
+def validate_reading_frames(source, frame_graph, layout):
+    from academic_pdf_en_zh_reader.layout.solver import (
+        validate_layout_against_frame_graph,
     )
-    for index in order[:remainder]:
-        ratios[index] += 1
-    return ratios
-
-
-def validate_mirrored_frames(
-    source: Mapping[str, object],
-    frame_graph: Mapping[str, object],
-    layout: Mapping[str, object],
-) -> dict[str, int]:
-    """Recompute every mirrored column and its fixed translation left edge."""
 
     try:
-        padding = int(frame_graph["flow_spacing"]["horizontal_padding_mpt"])  # type: ignore[index]
-        graph_frames = {
-            str(frame["id"]): frame
-            for page in frame_graph["pages"]  # type: ignore[index]
-            for frame in page["frames"]
-        }
-    except (KeyError, TypeError, ValueError) as exc:
-        raise GeometryQaError("GEOMETRY_MIRROR_INVALID") from exc
-    expected: dict[tuple[int, str, str, str], dict[str, object]] = {}
-    for source_page in source["pages"]:  # type: ignore[index]
-        crop_left, crop_bottom, _crop_right, _crop_top = source_page["crop_box_mpt"]
-        for band_index, band in enumerate(source_page["bands"]):
-            columns = band["columns"]
-            widths = [
-                int(column["x_right_mpt"]) - int(column["x_left_mpt"])
-                for column in columns
-            ]
-            ratios = _largest_remainder_ratios(widths)
-            for column_index, (column, ratio) in enumerate(
-                zip(columns, ratios, strict=True)
-            ):
-                left = A4_WIDTH_MPT + int(column["x_left_mpt"]) - int(crop_left)
-                right = min(
-                    A3_LANDSCAPE_WIDTH_MPT,
-                    A4_WIDTH_MPT + int(column["x_right_mpt"]) - int(crop_left),
-                )
-                bottom = int(band["y_bottom_mpt"]) - int(crop_bottom)
-                top = int(band["y_top_mpt"]) - int(crop_bottom)
-                for kind in ("native", "continuation-template"):
-                    expected[
-                        (
-                            int(source_page["page_number"]),
-                            str(band["id"]),
-                            str(column["id"]),
-                            kind,
-                        )
-                    ] = {
-                        "bbox_mpt": [left, bottom, right, top],
-                        "text_left_mpt": left + padding,
-                        "text_right_mpt": right - padding,
-                        "band_index": band_index,
-                        "column_index": column_index,
-                        "column_count": len(columns),
-                        "width_ratio_ppm": ratio,
-                    }
-    seen: set[tuple[int, str, str, str]] = set()
-    for frame in graph_frames.values():
-        key = (
-            int(frame["source_page_number"]),
-            str(frame["source_band_id"]),
-            str(frame["source_column_id"]),
-            str(frame["kind"]),
-        )
-        contract = expected.get(key)
-        if contract is None or any(
-            frame.get(name) != value for name, value in contract.items()
-        ):
-            raise GeometryQaError("GEOMETRY_MIRROR_INVALID")
-        seen.add(key)
-    if seen != set(expected):
-        raise GeometryQaError("GEOMETRY_MIRROR_INVALID")
-
-    layout_count = 0
-    for page in layout["pages"]:  # type: ignore[index]
-        for frame in page["frames"]:
-            template = graph_frames.get(str(frame["template_frame_id"]))
-            if (
-                template is None
-                or frame["text_left_mpt"] != template["text_left_mpt"]
-                or frame["text_right_mpt"] != template["text_right_mpt"]
-                or frame["bbox_mpt"][0] != template["bbox_mpt"][0]
-                or frame["bbox_mpt"][2] != template["bbox_mpt"][2]
-                or frame["column_index"] != template["column_index"]
-                or frame["column_count"] != template["column_count"]
-                or frame["width_ratio_ppm"] != template["width_ratio_ppm"]
-            ):
-                raise GeometryQaError("GEOMETRY_MIRROR_INVALID")
-            layout_count += 1
-    return {"frame_count": layout_count}
+        validate_layout_against_frame_graph(frame_graph, layout)
+    except ValueError as exc:
+        raise GeometryQaError("GEOMETRY_READING_FLOW_INVALID") from exc
+    return {"frame_count": sum(len(p["frames"]) for p in layout["pages"])}
 
 
 def validate_bounds_and_overlap(
@@ -255,7 +163,6 @@ def validate_bounds_and_overlap(
 ) -> dict[str, int]:
     """Require all translated geometry to stay in its frame with no block overlap."""
 
-    page_box = (0, 0, A3_LANDSCAPE_WIDTH_MPT, A3_LANDSCAPE_HEIGHT_MPT)
     right_box = (A4_WIDTH_MPT, 0, A3_LANDSCAPE_WIDTH_MPT, A3_LANDSCAPE_HEIGHT_MPT)
     try:
         plan_pages = source_plan_pages(layout, overlay_plan)
@@ -300,13 +207,14 @@ def validate_bounds_and_overlap(
             blocks[key] = block
             blocks_by_frame[str(block["frame_id"])].append(block_box)
             block_count += 1
-        for boxes in blocks_by_frame.values():
+        for boxes in [sum(blocks_by_frame.values(), [])]:
             ordered = sorted(
                 boxes, key=lambda item: (item[1], item[3], item[0], item[2])
             )
             if any(
                 _intersects(left, right)
-                for left, right in zip(ordered, ordered[1:], strict=False)
+                for i, left in enumerate(ordered)
+                for right in ordered[i + 1 :]
             ):
                 raise GeometryQaError("GEOMETRY_OVERLAP_INVALID")
         runs_by_line: defaultdict[tuple[str, int, int], list[Box]] = defaultdict(list)
@@ -316,7 +224,14 @@ def validate_bounds_and_overlap(
             if brand_block is None
             else _box(brand_block["bbox_mpt"], code="GEOMETRY_BOUNDS_INVALID")
         )
-        if brand_box is not None and not _contains(right_box, brand_box):
+        if brand_box is not None and (
+            not _contains(right_box, brand_box)
+            or any(
+                _intersects(brand_box, box)
+                for boxes in blocks_by_frame.values()
+                for box in boxes
+            )
+        ):
             raise GeometryQaError("GEOMETRY_BOUNDS_INVALID")
         for run in plan_page["draw_runs"]:
             run_box = _box(run["bbox_mpt"], code="GEOMETRY_BOUNDS_INVALID")
@@ -351,83 +266,7 @@ def validate_bounds_and_overlap(
                 _box(underline["bbox_mpt"], code="GEOMETRY_BOUNDS_INVALID"),
             ):
                 raise GeometryQaError("GEOMETRY_BOUNDS_INVALID")
-        for route in plan_page["leader_routes"]:
-            route_box = _box(route["bbox_mpt"], code="GEOMETRY_BOUNDS_INVALID")
-            if not _contains(page_box, route_box):
-                raise GeometryQaError("GEOMETRY_BOUNDS_INVALID")
-    if len(overlay_plan["pages"]) > len(plan_pages):
-        page = overlay_plan["pages"][-1]
-        from academic_pdf_en_zh_reader.rendering.branding import load_brand_manifest
-
-        manifest, _asset, _manifest_hash = load_brand_manifest()
-        margin = int(manifest["layout"]["page_margin_mpt"])
-        safe_box = (margin, margin, page_box[2] - margin, page_box[3] - margin)
-        brand_box = _box(
-            page["brand_block"]["bbox_mpt"], code="GEOMETRY_BOUNDS_INVALID"
-        )
-        image_box = _box(
-            page["brand_block"]["image_bbox_mpt"], code="GEOMETRY_BOUNDS_INVALID"
-        )
-        if not _contains(safe_box, brand_box) or not _contains(brand_box, image_box):
-            raise GeometryQaError("GEOMETRY_BOUNDS_INVALID")
-        boxes = [image_box]
-        for run in page["draw_runs"]:
-            run_box = _box(run["bbox_mpt"], code="GEOMETRY_BOUNDS_INVALID")
-            if not _contains(brand_box, run_box):
-                raise GeometryQaError("GEOMETRY_BOUNDS_INVALID")
-            if any(_intersects(run_box, previous) for previous in boxes):
-                raise GeometryQaError("GEOMETRY_OVERLAP_INVALID")
-            boxes.append(run_box)
     return {"block_count": block_count}
-
-
-def validate_leader_policy(
-    source: Mapping[str, object],
-    layout: Mapping[str, object],
-    overlay_plan: Mapping[str, object],
-) -> dict[str, int]:
-    """Forbid leaders for multi-column soft alignment and bind every legal route."""
-
-    column_counts = {
-        (int(page["page_number"]), str(band["id"])): len(band["columns"])
-        for page in source["pages"]  # type: ignore[index]
-        for band in page["bands"]
-    }
-    route_count = 0
-    try:
-        plan_pages = source_plan_pages(layout, overlay_plan)
-    except (KeyError, TypeError, ValueError) as exc:
-        raise GeometryQaError("GEOMETRY_LEADER_INVALID") from exc
-    for page, plan_page in zip(layout["pages"], plan_pages, strict=True):  # type: ignore[index]
-        routes = {str(route["unit_id"]): route for route in plan_page["leader_routes"]}
-        expected: set[str] = set()
-        for block in page["blocks"]:
-            selected = block.get("selected_anchor")
-            if selected is None:
-                continue
-            columns = column_counts.get(
-                (int(selected["source_page_number"]), str(selected["source_band_id"]))
-            )
-            if columns is None:
-                raise GeometryQaError("GEOMETRY_LEADER_INVALID")
-            if selected["kind"] == "soft-y":
-                if columns <= 1 or str(block["unit_id"]) in routes:
-                    raise GeometryQaError("GEOMETRY_LEADER_INVALID")
-                continue
-            if selected["kind"] != "leader" or columns != 1:
-                raise GeometryQaError("GEOMETRY_LEADER_INVALID")
-            unit_id = str(block["unit_id"])
-            route = routes.get(unit_id)
-            if (
-                route is None
-                or route["points_mpt"][0] != selected["source_endpoint_mpt"]
-            ):
-                raise GeometryQaError("GEOMETRY_LEADER_INVALID")
-            expected.add(unit_id)
-        if expected != set(routes):
-            raise GeometryQaError("GEOMETRY_LEADER_INVALID")
-        route_count += len(routes)
-    return {"leader_count": route_count}
 
 
 def validate_continuation_and_sizes(
@@ -442,25 +281,18 @@ def validate_continuation_and_sizes(
         for flow in frame_graph.get(key, []):
             identifier = flow.get("unit_id") if key == "unit_flows" else flow.get("id")
             flow_styles[str(identifier)] = flow["style"]
-    header = frame_graph.get("continuation_header")
     continuation_count = 0
     try:
         plan_pages = source_plan_pages(layout, overlay_plan)
     except (KeyError, TypeError, ValueError) as exc:
         raise GeometryQaError("GEOMETRY_CONTINUATION_INVALID") from exc
-    for page, plan_page in zip(layout["pages"], plan_pages, strict=True):  # type: ignore[index]
-        continuation = page["page_kind"] == "continuation"
-        if continuation != (page["continuation_label"] is not None) or continuation != (
-            plan_page["continuation_label"] is not None
+    for page, plan_page in zip(layout["pages"], plan_pages, strict=True):
+        continuation_count += int(page["source_page_number"] is None)
+        if (
+            page["continuation_label"] is not None
+            or plan_page["continuation_label"] is not None
         ):
             raise GeometryQaError("GEOMETRY_CONTINUATION_INVALID")
-        if continuation:
-            continuation_count += 1
-            if (
-                not isinstance(header, Mapping)
-                or page["continuation_label"]["header_hash"] != header["header_hash"]
-            ):
-                raise GeometryQaError("GEOMETRY_CONTINUATION_INVALID")
         block_styles: dict[tuple[str, int], Mapping[str, object]] = {}
         for block in page["blocks"]:
             expected = flow_styles.get(str(block["content_id"]))
@@ -470,13 +302,7 @@ def validate_continuation_and_sizes(
                 expected
             )
         for run in plan_page["draw_runs"]:
-            if run["content_kind"] == "continuation-label":
-                if (
-                    not isinstance(header, Mapping)
-                    or run["size_mpt"] != header["style"]["size_mpt"]
-                ):
-                    raise GeometryQaError("GEOMETRY_FIXED_SIZE_INVALID")
-            elif run["content_kind"] == "brand":
+            if run["content_kind"] == "brand":
                 continue
             else:
                 style = block_styles.get(
@@ -492,7 +318,6 @@ __all__ = [
     "validate_a3_pages",
     "validate_bounds_and_overlap",
     "validate_continuation_and_sizes",
-    "validate_leader_policy",
-    "validate_mirrored_frames",
+    "validate_reading_frames",
     "validate_source_left_one_to_one",
 ]

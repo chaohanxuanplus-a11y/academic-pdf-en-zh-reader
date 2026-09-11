@@ -29,6 +29,7 @@ _GRAPHIC_CONFIDENCE_PPM = {
     "intersecting-grid": 950_000,
     "captioned-three-rule-table": 950_000,
     "enclosed-vector-drawing": 850_000,
+    "caption-bounded-composite": 900_000,
 }
 
 

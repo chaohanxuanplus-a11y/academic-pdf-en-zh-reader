@@ -17,7 +17,7 @@ from academic_pdf_en_zh_reader.annotations.figure_notes import (
 from academic_pdf_en_zh_reader.job.hashing import sha256_bytes, sha256_canonical
 from academic_pdf_en_zh_reader.review.review_validation import (
     ReviewValidationError,
-    validate_independent_review,
+    validate_review,
 )
 from academic_pdf_en_zh_reader.review.translation_validation import (
     TranslationValidationError,
@@ -54,6 +54,7 @@ _ALLOWED_ITEM_FIELDS = {
         "english_original",
         "chinese_meaning",
         "deferred_occurrences",
+        "essential",
     },
     "figure-table-reading": _COMMON_ITEM_FIELDS
     | {
@@ -275,10 +276,6 @@ def _validate_generated_item(
             item.get("source_end"),
             english,
         )
-        if item.get("uses_continuation") is not False:
-            raise AnnotationValidationError(
-                "ordinary teaching cannot add a continuation"
-            )
     elif kind == "figure-table-reading":
         if index.roles[unit_id] not in {"figure-caption", "table-caption"}:
             raise AnnotationValidationError("figure note must bind to a caption unit")
@@ -381,7 +378,7 @@ def validate_annotations_against_inputs(
 
     index = annotation_index(units, translation)
     try:
-        validate_independent_review(translation, review)
+        validate_review(translation, review)
         validate_artifact("annotations", annotations)
     except (ReviewValidationError, SchemaValidationError) as exc:
         raise AnnotationValidationError(
@@ -476,8 +473,6 @@ def validate_annotations_against_inputs(
         count != 1 for count in ambiguity_labels.values()
     ):
         raise AnnotationValidationError("each unresolved ambiguity needs one label")
-    if any(count > 3 for count in figure_counts.values()):
-        raise AnnotationValidationError("a figure may have at most three notes")
     if _same_kind_spans_overlap(ambiguity_spans):
         raise AnnotationValidationError("ambiguity target spans must not overlap")
     if _same_kind_spans_overlap(red_spans):

@@ -74,6 +74,6 @@
   },
   "$defs": {
     "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
-    "stage": {"enum": ["initialized", "preflighted", "extracted", "translated", "independently_reviewed", "annotated", "laid_out", "rendered", "validated", "finalized"]}
+    "stage": {"enum": ["initialized", "preflighted", "extracted", "translated", "reviewed", "annotated", "laid_out", "rendered", "validated", "finalized"]}
   }
 }

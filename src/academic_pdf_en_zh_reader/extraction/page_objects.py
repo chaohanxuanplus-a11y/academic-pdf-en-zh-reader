@@ -233,6 +233,9 @@ def extract_page_objects(pdf_path: str | Path) -> ExtractedDocument:
     fixture truth is test scaffolding, not an extraction oracle.
     """
 
+    from academic_pdf_en_zh_reader.extraction.runtime import initialize_pinned_pdfminer
+
+    initialize_pinned_pdfminer()
     import pdfplumber
 
     pages: list[PageObjects] = []

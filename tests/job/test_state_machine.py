@@ -26,7 +26,7 @@ STAGE_ARTIFACTS = {
     },
     JobStage.EXTRACTED: {"source": "2" * 64, "units": "3" * 64},
     JobStage.TRANSLATED: {"translation": "4" * 64},
-    JobStage.INDEPENDENTLY_REVIEWED: {"review": "5" * 64},
+    JobStage.REVIEWED: {"review": "5" * 64},
     JobStage.ANNOTATED: {"annotations": "6" * 64},
     JobStage.LAID_OUT: {
         "frame-graph": "7" * 64,
@@ -153,7 +153,7 @@ def test_laid_out_stage_requires_the_finalization_receipt() -> None:
         JobStage.PREFLIGHTED,
         JobStage.EXTRACTED,
         JobStage.TRANSLATED,
-        JobStage.INDEPENDENTLY_REVIEWED,
+        JobStage.REVIEWED,
         JobStage.ANNOTATED,
     ):
         state = _advance(state, stage)

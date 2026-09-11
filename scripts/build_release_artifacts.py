@@ -41,6 +41,7 @@ COMMON_PATHS = (
     "compliance/python-runtime.json",
     "compliance/python-dependencies.json",
     "compliance/release-status.json",
+    "docs/compatibility-issues.md",
     "pyproject.toml",
     "references",
     "src",

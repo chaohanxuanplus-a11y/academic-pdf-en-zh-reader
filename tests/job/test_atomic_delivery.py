@@ -49,7 +49,7 @@ def _validated_state(*, candidate_sha256: str, manifest_sha256: str, qa_sha256: 
         ),
         (JobStage.EXTRACTED, {"source": "2" * 64, "units": "3" * 64}),
         (JobStage.TRANSLATED, {"translation": "4" * 64}),
-        (JobStage.INDEPENDENTLY_REVIEWED, {"review": "5" * 64}),
+        (JobStage.REVIEWED, {"review": "5" * 64}),
         (JobStage.ANNOTATED, {"annotations": "6" * 64}),
         (
             JobStage.LAID_OUT,

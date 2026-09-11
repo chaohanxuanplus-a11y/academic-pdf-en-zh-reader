@@ -12,7 +12,7 @@ Canonical repository: [chaohanxuanplus-a11y/academic-pdf-en-zh-reader](https://g
 
 ## Current status
 
-Version `0.1.0` is prepared for release. The maintainer identity, shared private
+Version `0.2.0` provides continuous Chinese columns, contextual supplements and recoverable completion attempts. The maintainer identity, shared private
 contact, limited-purpose brand permission, and successful Windows production
 audit have been recorded in
 [`compliance/release-status.json`](compliance/release-status.json). This historical
@@ -40,32 +40,11 @@ Before relying on or distributing any generated file, read the project-wide
 Agent-assisted generation, and downstream publication are distinct
 responsibilities; the Skill does not fetch or automatically publish papers.
 
-The approved product design and implementation plan are:
+## Reading format
 
-- [`docs/superpowers/specs/2026-08-27-academic-pdf-bilingual-reader-skill-design.md`](docs/superpowers/specs/2026-08-27-academic-pdf-bilingual-reader-skill-design.md)
-- [`docs/superpowers/plans/2026-08-27-academic-pdf-bilingual-reader-implementation-plan.md`](docs/superpowers/plans/2026-08-27-academic-pdf-bilingual-reader-implementation-plan.md)
+The A3 landscape output preserves normalized English source pages on the left. Chinese title, abstract and keywords span the right panel; all remaining Chinese flows in two columns with paragraph vocabulary and contextual figure/table explanations. References remain untranslated. Fixed readable type, compact spacing and an unchanged final-page responsibility statement are required.
 
-## Version 1 boundary
-
-The Skill accepts one unencrypted, born-digital, English-majority academic
-PDF with a usable text layer and interpretable visible page boxes. Each displayed
-CropBox is fitted into a managed A4 canvas before extraction: pages that already
-fit remain at 1:1 and receive centered blank padding on deficient axes; a page
-that exceeds either A4 axis is uniformly scaled down only enough to fit. Pages
-are never enlarged, cropped, or stretched, and a non-A4 size alone does not stop
-the job. OCR, scanned papers, public hosting, batch services, and redistribution
-of user papers are outside v1.
-
-The hard product invariants are complete translation, correct reading order,
-mirrored column topology, fixed body font size, no overlap, embedded approved
-fonts, no garbled text, and fail-closed handling of unsupported inputs.
-
-Every successfully delivered PDF contains one fixed project identity, logo, and
-responsibility statement at its end. If the final paper page has terminal
-reference entries and a safe unused right-side region, the card is placed there.
-Otherwise a dedicated final statement page is appended, and the user is notified.
-The statement is never omitted for lack of space, never falls back to an earlier
-page, and never replaces required translation or changes annotation budgets.
+Paragraph drafts are assembled programmatically. Default review focuses on difficult or flagged units. Verified extraction checkpoints and unaffected drafts survive recoverable local failures. Optional notes are removed before core content is allowed to exceed the body-page budget. See [runbook](references/runbook.md) and [product contract](references/product-contract.md).
 
 ## Local setup
 
@@ -220,7 +199,7 @@ host smoke test nor the packager's hash/PE checks can substitute for those gates
 
 PDF processing, layout, rendering, and personal correction storage are
 designed to run locally. Extracted paper text enters the current Agent model
-context for translation and independent review; the project does not silently
+context for translation and focused review; the project does not silently
 call another translation API. The repository must never contain user papers,
 ordinary journal screenshots, extracted full text, correction databases, or
 unredacted logs.

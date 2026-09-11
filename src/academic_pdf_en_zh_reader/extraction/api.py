@@ -633,7 +633,7 @@ def _validate_page_items(
             item["id"]
             for item in sorted(
                 line_characters,
-                key=lambda item: (item["bbox_mpt"][0], item["id"]),
+                key=lambda item: (item["bbox_mpt"][0], item["bbox_mpt"][1], item["id"]),
             )
         ]
         pieces: list[str] = []

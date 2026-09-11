@@ -9,7 +9,7 @@ Importing the package does not create a correction database. The local correctio
 store is created only by an explicit authorized correction or store command.
 
 This is not a claim that translation is fully offline: extracted content needed
-for translation and independent review enters the current Agent context. The
+for translation and focused review enters the current Agent context. The
 Skill does not fetch source papers or automatically upload or publish generated
 PDFs. User and content-rights responsibilities are stated separately in the
 [project disclaimer](DISCLAIMER.md).
@@ -19,7 +19,7 @@ The privacy contract requires it to:
 - process PDF parsing, layout, rendering, QA, and personal correction storage
   locally;
 - send only bounded extracted content to the current Agent context for
-  translation and independent review;
+  translation and focused review;
 - not silently use another translation API;
 - keep the managed root and Agent JSON private and outside the repository, and
   keep Agent JSON outside the managed job;

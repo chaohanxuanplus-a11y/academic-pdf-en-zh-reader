@@ -19,7 +19,7 @@ from academic_pdf_en_zh_reader.annotations.validation import (
 from academic_pdf_en_zh_reader.job.hashing import sha256_canonical
 from academic_pdf_en_zh_reader.review.review_validation import (
     ReviewValidationError,
-    validate_independent_review,
+    validate_review,
 )
 from academic_pdf_en_zh_reader.review.translation_validation import (
     TranslationValidationError,
@@ -56,11 +56,11 @@ def validate_semantics(
     ) as exc:
         raise SemanticQaError("SEMANTIC_TRANSLATION_INVALID") from exc
     try:
-        gate = validate_independent_review(translation, review)
+        gate = validate_review(translation, review)
     except (ReviewValidationError, SchemaValidationError, TypeError, ValueError) as exc:
         raise SemanticQaError("SEMANTIC_REVIEW_INVALID") from exc
     return {
-        "unit_count": len(gate.reviewed_unit_ids),
+        "unit_count": len(translation["units"]),
         "ambiguity_key_count": len(gate.unresolved_ambiguity_keys),
     }
 
@@ -93,7 +93,7 @@ def validate_annotation_policy(
     try:
         validate_artifact("annotations", annotations)
         index = annotation_index(units, translation)
-        gate = validate_independent_review(translation, review)
+        gate = validate_review(translation, review)
     except Exception as exc:
         raise SemanticQaError("ANNOTATION_POLICY_INVALID") from exc
     if (

@@ -71,6 +71,7 @@ class QaCommitResult:
     qa_hash: str | None
     provenance_hash: str | None
     validated_state_hash: str | None
+    failure_codes: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -499,6 +500,9 @@ def persist_qa_result(
             qa_hash=None,
             provenance_hash=None,
             validated_state_hash=None,
+            failure_codes=tuple(
+                check["details"] for check in qa["checks"] if not check["passed"]
+            ),
         )
 
     qa_hash = sha256_bytes(canonical_json_bytes(qa))

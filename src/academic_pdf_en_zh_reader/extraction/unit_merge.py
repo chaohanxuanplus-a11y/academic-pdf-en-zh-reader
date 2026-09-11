@@ -31,6 +31,8 @@ _LIST_START = re.compile(
 _QUOTE_START = frozenset({'"', "'", "\u2018", "\u201c"})
 _SENTENCE_END = re.compile(r"[.!?][\"'\u2019\u201d)\]]*\Z")
 _COORDINATING_CONTINUATION = re.compile(r"\b(?:and|or|nor)\s*\Z", re.IGNORECASE)
+_PARENTHETICAL_INFIX = re.compile(r"\([a-z][^()\n]{0,80}\)\s*[,;]")
+_CHEMICAL_START = re.compile(r"(?:[A-Z][a-z]?\d*){2,}\b")
 
 
 class UnitMergeError(ValueError):
@@ -154,13 +156,39 @@ def _is_indented(block: _LocatedBlock) -> bool:
     )
 
 
-def _boundary_decision(left: _LocatedBlock, right: _LocatedBlock) -> str:
+def _boundary_decision(
+    left: _LocatedBlock, right: _LocatedBlock, *, floated: bool = False
+) -> str:
     if left.block["role"] != "body" or right.block["role"] != "body":
         return "separate"
     left_text = left.block["text"].rstrip()
     right_text = right.block["text"].lstrip()
     if not (
         _is_break_transition(left, right)
+        or (
+            floated
+            and (
+                (
+                    left.page_number == right.page_number
+                    and (
+                        right.column_index == left.column_index + 1
+                        or (
+                            left.block["band_id"] != right.block["band_id"]
+                            and right.column_index == 0
+                        )
+                    )
+                )
+                or right.page_number == left.page_number + 1
+            )
+        )
+        or (
+            left.page_number == right.page_number
+            and left.block["band_id"] == right.block["band_id"]
+            and left.column_index == right.column_index
+            and 0 <= left.block["bbox_mpt"][1] - right.block["bbox_mpt"][3] <= 50000
+            and left_text.endswith("-")
+            and right_text[:1].islower()
+        )
         or _is_forced_hyphenated_column_continuation(
             left,
             right,
@@ -181,7 +209,12 @@ def _boundary_decision(left: _LocatedBlock, right: _LocatedBlock) -> str:
         return "separate"
     if left_text.endswith("-"):
         return "merge" if right_text[0].islower() else "review"
-    if right_text[0].islower() or _COORDINATING_CONTINUATION.search(left_text):
+    if (
+        right_text[0].islower()
+        or _COORDINATING_CONTINUATION.search(left_text)
+        or _PARENTHETICAL_INFIX.match(right_text)
+        or _CHEMICAL_START.match(right_text)
+    ):
         return "merge"
     return "review"
 
@@ -226,14 +259,23 @@ def build_semantic_units(source: Mapping[str, object]) -> UnitMergeOutcome:
     units: list[dict[str, object]] = []
     issues: list[UnitMergeIssue] = []
     previous: _LocatedBlock | None = None
+    previous_unit_index = -1
+    floated = False
     for block in blocks:
+        if block.block["role"] in {"figure-caption", "table-caption"}:
+            units.append(_new_unit(block))
+            floated = previous is not None
+            continue
         decision = (
-            "separate" if previous is None else _boundary_decision(previous, block)
+            "separate"
+            if previous is None
+            else _boundary_decision(previous, block, floated=floated)
         )
         if decision == "merge":
-            _append_fragment(units[-1], block)
+            _append_fragment(units[previous_unit_index], block)
         else:
             units.append(_new_unit(block))
+            previous_unit_index = len(units) - 1
             if decision == "review" and previous is not None:
                 issues.append(
                     UnitMergeIssue(
@@ -243,6 +285,7 @@ def build_semantic_units(source: Mapping[str, object]) -> UnitMergeOutcome:
                     )
                 )
         previous = block
+        floated = False
 
     if issues:
         return UnitMergeOutcome(

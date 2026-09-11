@@ -44,7 +44,7 @@ def test_production_finish_completes_render_and_qa_in_lpac(tmp_path: Path) -> No
     assert _finish(fixture) == {
         "status": "ok",
         "code": "FINISH_OK",
-        "notices": ["DISCLAIMER_PAGE_APPENDED"],
+        "added_pages": 0,
     }
     assert fixture.output_pdf.is_file()
     assert not fixture.job_root.exists()
