@@ -75,6 +75,9 @@ def _manifest(
             {
                 "output_page_number": output_page_number,
                 "source_page_number": source_page_number,
+                "page_kind": "native",
+                "continuation_index": 0,
+                "continuation_label_present": False,
                 "overlay_image_fingerprints": declared,
             }
             for output_page_number, (source_page_number, declared) in enumerate(
@@ -115,6 +118,9 @@ def test_malformed_or_unsorted_declarations_are_rejected(declared: object) -> No
     manifest_page: dict[str, object] = {
         "output_page_number": 1,
         "source_page_number": 1,
+        "page_kind": "native",
+        "continuation_index": 0,
+        "continuation_label_present": False,
     }
     if declared is not None:
         manifest_page["overlay_image_fingerprints"] = declared
