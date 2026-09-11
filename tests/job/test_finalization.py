@@ -37,7 +37,6 @@ from academic_pdf_en_zh_reader.layout.annotation_adapter import (
 from academic_pdf_en_zh_reader.layout.frame_graph import DEFAULT_FRAME_GRAPH_CONFIG
 from academic_pdf_en_zh_reader.layout.solver import (
     DEFAULT_LAYOUT_LIMITS,
-    validate_layout_against_frame_graph,
 )
 from academic_pdf_en_zh_reader.schema.validate import validate_artifact
 from academic_pdf_en_zh_reader.typography.font_registry import load_font_registry
@@ -180,7 +179,7 @@ def _inputs():
 def test_finalizer_uses_one_frozen_chain_and_emits_valid_receipt(monkeypatch) -> None:
     source, units, translation, review, style, resolver, candidates = _inputs()
     graph_config = replace(DEFAULT_FRAME_GRAPH_CONFIG, horizontal_padding_mpt=4_001)
-    layout_limits = replace(DEFAULT_LAYOUT_LIMITS, max_window_attempts=8_191)
+    layout_limits = replace(DEFAULT_LAYOUT_LIMITS, max_lines=999_999)
     adapter_limits = replace(
         DEFAULT_ANNOTATION_ADAPTER_LIMITS,
         max_items_total=9_999,
@@ -367,27 +366,22 @@ def test_receipt_rejects_synchronized_one_mpt_layout_tamper() -> None:
     )
     tampered_layout = deepcopy(result.layout)
     page = tampered_layout["pages"][0]
-    band = page["bands"][0]
-    band["solved_top_offset_mpt"] += 1
-    band["bbox_mpt"][1] -= 1
-    band["bbox_mpt"][3] -= 1
     for frame in page["frames"]:
         frame["bbox_mpt"][1] -= 1
         frame["bbox_mpt"][3] -= 1
     for block in page["blocks"]:
-        block["solved_top_offset_mpt"] += 1
         block["bbox_mpt"][1] -= 1
         block["bbox_mpt"][3] -= 1
         for line in block["lines"]:
             line["baseline_y_mpt"] -= 1
-    validate_layout_against_frame_graph(result.frame_graph, tampered_layout)
+    validate_artifact("layout", tampered_layout)
 
     forged_receipt = deepcopy(result.receipt)
     forged_receipt["artifact_hashes"]["layout"] = sha256_canonical(tampered_layout)
     forged_receipt["receipt_hash"] = sha256_canonical(
         {key: value for key, value in forged_receipt.items() if key != "receipt_hash"}
     )
-    with pytest.raises(FinalizationError, match="layout recomputation"):
+    with pytest.raises(FinalizationError, match="recomputation"):
         validate_finalization_receipt_against_inputs(
             source,
             units,

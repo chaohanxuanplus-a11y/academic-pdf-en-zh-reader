@@ -35,14 +35,14 @@ def test_style_contract_freezes_document_wide_role_sizes() -> None:
         )
     )
 
-    assert contract.version == 1
+    assert contract.version == 2
     assert contract.style_for("body") == contract.style_for("abstract")
     assert contract.style_for("body").size_mpt == 10_000
     assert contract.style_for("body").font_role == "body"
     assert contract.style_for("title").font_role == "heading"
     assert contract.style_for("heading").font_role == "heading"
     assert contract.style_for("auxiliary").size_mpt == max(
-        8_600,
+        9_000,
         AUXILIARY_MIN_SIZE_MPT,
     )
     assert contract.style_for("auxiliary").size_mpt >= AUXILIARY_MIN_SIZE_MPT

@@ -968,6 +968,7 @@ def test_ready_tree_builds_repeatable_notice_complete_candidates(
             assert b"PUBLIC_RELEASE_" + b"BLOCKED" not in b"".join(
                 archive.read(name) for name in archive.namelist()
             )
+            assert "academic-pdf-en-zh-reader/docs/compatibility-issues.md" in names
             assert "academic-pdf-en-zh-reader/REUSE.toml" in names
             assert "academic-pdf-en-zh-reader/compliance/python-runtime.json" in names
             assert (
