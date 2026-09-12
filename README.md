@@ -12,7 +12,7 @@ Canonical repository: [chaohanxuanplus-a11y/academic-pdf-en-zh-reader](https://g
 
 ## Current status
 
-Version `0.2.3` retains continuous Chinese columns with full-width front-matter notes, larger reading type and a centered final responsibility card. Two clause separators in the card now become explicit line breaks; all other wording and styling are preserved. It retains the restricted-token cleanup and handle-identity fixes from `0.2.2`. The maintainer identity, shared private
+Version `0.2.4` retains continuous Chinese columns with full-width front-matter notes, larger reading type and a centered final responsibility card. The card retains its explicit clause line breaks and removes “或法律依据” from the authorization sentence; all other wording and styling are preserved. It retains the restricted-token cleanup and handle-identity fixes from `0.2.2`. The maintainer identity, shared private
 contact, limited-purpose brand permission, and successful Windows production
 audit have been recorded in
 [`compliance/release-status.json`](compliance/release-status.json). This historical
