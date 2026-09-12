@@ -7,7 +7,7 @@ title: "academic-pdf-en-zh-reader"
 type: software
 authors:
   - name: "academic-pdf-en-zh-reader contributors"
-version: "0.2.0"
+version: "0.2.1"
 repository-code: "https://github.com/chaohanxuanplus-a11y/academic-pdf-en-zh-reader"
-date-released: "2026-09-11"
+date-released: "2026-09-12"
 license: "Apache-2.0"

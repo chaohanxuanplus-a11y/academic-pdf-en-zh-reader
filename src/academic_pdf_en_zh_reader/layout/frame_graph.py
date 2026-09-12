@@ -35,7 +35,7 @@ class FrameGraphError(ValueError):
 
 @dataclass(frozen=True, slots=True)
 class FrameGraphConfig:
-    version: int = 2
+    version: int = 3
     horizontal_padding_mpt: int = 32_000
     vertical_padding_mpt: int = 32_000
     column_gap_mpt: int = 16_000
@@ -46,7 +46,7 @@ class FrameGraphConfig:
         if any(type(v) is not int or v < 0 for v in asdict(self).values()):
             raise FrameGraphError("invalid spacing")
         if (
-            self.version != 2
+            self.version != 3
             or 2 * self.horizontal_padding_mpt + self.column_gap_mpt >= A4_WIDTH_MPT
         ):
             raise FrameGraphError("invalid column geometry")
@@ -145,7 +145,7 @@ def _construct(
                 item["content"],
                 annotation_id=item["id"],
                 target_offset=len(text),
-                maximum_width_mpt=column_width,
+                maximum_width_mpt=width,
                 resolver=resolver,
                 style=aux_style,
                 style_contract_version=style_contract.version,
@@ -156,7 +156,7 @@ def _construct(
                 "role": "auxiliary",
                 "annotation_id": item["id"],
                 "annotation_kind": item["kind"],
-                "column_count": 2,
+                "column_count": columns,
                 "source_page_numbers": source_pages,
                 "parent_target_length": len(text),
                 "attachment": "below-translation",
@@ -181,6 +181,8 @@ def _construct(
             auxiliary_flows.append(aux)
             order.append(aux["id"])
     manifest, _, manifest_hash = load_brand_manifest()
+    if manifest["layout"]["page_margin_mpt"] != config.vertical_padding_mpt:
+        raise FrameGraphError("statement and reading flow must share a safe margin")
     warning = freeze_brand_block(
         output_page_number=1,
         start_draw_order=0,

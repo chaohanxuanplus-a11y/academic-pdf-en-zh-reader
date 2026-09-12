@@ -62,7 +62,7 @@ def test_long_paragraph_flows_without_losing_text_or_changing_size(inputs):
         "".join(line["text"] for b in blocks for line in b["lines"])
         == target["chinese_text"]
     )
-    assert {b["style"]["size_mpt"] for b in blocks} == {10_000}
+    assert {b["style"]["size_mpt"] for b in blocks} == {11_000}
     assert all(
         p["source_page_number"] is None for p in layout["pages"][len(source["pages"]) :]
     )
@@ -150,21 +150,71 @@ def test_different_source_columns_do_not_change_chinese_reading_width(inputs):
 
 def test_spacing_and_footnote_keep_fixed_readable_type():
     style = build_style_contract(())
-    assert style.style_for("body").size_mpt == 10000
-    assert style.style_for("auxiliary").size_mpt == 9000
-    assert style.style_for("footnote").size_mpt >= 9000
+    assert style.style_for("body").size_mpt == 11000
+    assert style.style_for("auxiliary").size_mpt == 10000
+    assert style.style_for("footnote").size_mpt >= 10000
+
+
+def test_heading_moves_with_two_actual_larger_body_lines(inputs):
+    from academic_pdf_en_zh_reader.layout.solver import DEFAULT_LAYOUT_LIMITS, _paginate
+
+    graph = graph_for(inputs)
+    body = deepcopy(next(f for f in graph["unit_flows"] if f["role"] == "body"))
+    heading = deepcopy(next(f for f in graph["unit_flows"] if f["role"] == "heading"))
+    prefix = deepcopy(body)
+    prefix["unit_id"] = "prefix"
+    # Isolate the pagination boundary using measured body lines: 47 * 15.4 pt.
+    prefix["lines"] = [deepcopy(body["lines"][0]) for _ in range(47)]
+    prefix["line_count"] = 47
+    body["lines"] = [deepcopy(body["lines"][0]) for _ in range(3)]
+    body["line_count"] = 3
+    graph["unit_flows"] = [prefix, heading, body]
+    graph["auxiliary_flows"] = []
+    graph["flow_order"] = [f["unit_id"] for f in graph["unit_flows"]]
+    page = _paginate(graph, DEFAULT_LAYOUT_LIMITS)[0]
+    heading_block = next(
+        b for b in page["blocks"] if b["unit_id"] == heading["unit_id"]
+    )
+    body_block = next(b for b in page["blocks"] if b["unit_id"] == body["unit_id"])
+    assert heading_block["column_index"] == body_block["column_index"] == 1
+    assert len(body_block["lines"]) >= 2
+    assert heading_block["bbox_mpt"][3] == 841_890 - 32_000
+
+
+def test_body_columns_start_at_equal_height_after_front_matter(inputs):
+    from academic_pdf_en_zh_reader.layout.solver import DEFAULT_LAYOUT_LIMITS, _paginate
+
+    graph = graph_for(inputs)
+    title = deepcopy(next(f for f in graph["unit_flows"] if f["role"] == "title"))
+    body = deepcopy(next(f for f in graph["unit_flows"] if f["role"] == "body"))
+    body["lines"] = [deepcopy(body["lines"][0]) for _ in range(60)]
+    body["line_count"] = 60
+    graph["unit_flows"] = [title, body]
+    graph["auxiliary_flows"] = []
+    graph["flow_order"] = [title["unit_id"], body["unit_id"]]
+    page = _paginate(graph, DEFAULT_LAYOUT_LIMITS)[0]
+    blocks = [b for b in page["blocks"] if b["unit_id"] == body["unit_id"]]
+    assert [b["column_index"] for b in blocks] == [0, 1]
+    assert blocks[0]["bbox_mpt"][3] == blocks[1]["bbox_mpt"][3]
 
 
 def test_warning_space_is_reserved_before_filling_both_columns():
     from tests.rendering.test_text_styles import build_render_fixture
 
     *_, graph, layout = build_render_fixture(
-        chinese_text="甲乙丙丁戊己" * 300,
+        chinese_text="甲乙丙丁戊己" * 160,
         include_red=False,
         include_ambiguity=False,
         include_auxiliary=False,
     )
-    assert graph["unit_flows"][0]["line_count"] > 60
+    single_column_capacity = (
+        841_890 - 2 * 32_000 - graph["warning_height_mpt"] - 3_500
+    ) // 15_400
+    assert (
+        single_column_capacity
+        < graph["unit_flows"][0]["line_count"]
+        <= 2 * single_column_capacity
+    )
     assert len(layout["pages"]) == 1
     page = layout["pages"][0]
     assert {b["column_index"] for b in page["blocks"]} == {0, 1}

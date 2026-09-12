@@ -29,6 +29,35 @@ def _reference_plan() -> tuple[dict[str, object], ...]:
     return source, graph, layout, plan
 
 
+@pytest.mark.parametrize("empty_last_panel", [False, True])
+def test_large_statement_card_is_centered_in_all_remaining_safe_space(empty_last_panel):
+    *_, graph, layout = build_render_fixture(include_reference_page=empty_last_panel)
+    page = layout["pages"][-1]
+    margin = graph["flow_spacing"]["vertical_padding_mpt"]
+    expected_top = 841_890 - margin
+    if page["blocks"]:
+        expected_top = min(b["bbox_mpt"][1] for b in page["blocks"]) - 3_500
+    assert page["warning_region_mpt"] == [margin, expected_top]
+    manifest, _, manifest_hash = load_brand_manifest()
+    card, _, runs = freeze_brand_block(
+        output_page_number=page["page_number"],
+        start_draw_order=0,
+        manifest=manifest,
+        manifest_sha256=manifest_hash,
+        available_y_mpt=tuple(page["warning_region_mpt"]),
+    )
+    left, bottom, right, top = card["bbox_mpt"]
+    assert abs(bottom + top - margin - expected_top) <= 1
+    assert abs(left + right - 3 * 595_276) <= 1
+    logo = card["image_bbox_mpt"]
+    assert logo[2] - logo[0] == logo[3] - logo[1] == 72_000
+    warning = [r for r in runs if r["style_id"] == "brand:disclaimer"]
+    assert warning and {r["size_mpt"] for r in warning} == {12_000}
+    assert all(
+        r["size_mpt"] > graph["unit_flows"][0]["style"]["size_mpt"] for r in warning
+    )
+
+
 def test_brand_card_uses_only_the_final_output_page_when_earlier_pages_fit() -> None:
     source, _units, _translation, _review, annotations, graph, layout = (
         build_render_fixture(
@@ -57,7 +86,8 @@ def test_brand_card_uses_only_the_final_output_page_when_earlier_pages_fit() -> 
         pytest.param(None, {"section_gap_mpt": "8000"}, id="string"),
         pytest.param(None, {"section_gap_mpt": 0}, id="zero"),
         pytest.param(None, {"section_gap_mpt": -1}, id="negative"),
-        pytest.param(None, {"policy_version": 2}, id="unknown-policy"),
+        pytest.param(None, {"policy_version": 99}, id="unknown-policy"),
+        pytest.param(None, {"policy_version": 1}, id="obsolete-policy"),
         pytest.param(None, {"card_min_width_mpt": 600_000}, id="width-order"),
         pytest.param(None, {"card_padding_x_mpt": 300_000}, id="no-inner-width"),
         pytest.param(None, {"logo_size_mpt": 600_000}, id="logo-too-wide"),

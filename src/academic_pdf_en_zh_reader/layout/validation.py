@@ -20,6 +20,35 @@ def validate_reading_artifact(name, artifact):
             and set(ids) == set(artifact["flow_order"]),
             "reading flow coverage mismatch",
         )
+        parents = {flow["unit_id"]: flow for flow in artifact["unit_flows"]}
+        grouped_notes = {uid: [] for uid in parents}
+        for parent in parents.values():
+            expected_columns = (
+                1 if parent["role"] in {"title", "abstract", "keywords"} else 2
+            )
+            require(
+                parent["column_count"] == expected_columns,
+                f"reading width differs from unit role: {parent['unit_id']}",
+            )
+        for note in artifact["auxiliary_flows"]:
+            uid = note["unit_id"]
+            require(
+                uid in parents, f"note has no parent: {note['annotation_id']} ({uid})"
+            )
+            require(
+                note["column_count"] == parents[uid]["column_count"],
+                f"note width differs from parent: {note['annotation_id']} ({uid})",
+            )
+            grouped_notes[uid].append(note["id"])
+        require(
+            artifact["flow_order"]
+            == [
+                identifier
+                for uid in parents
+                for identifier in (uid, *grouped_notes[uid])
+            ],
+            "notes must immediately follow their parent in reading order",
+        )
         for flow in flows:
             lines = flow["lines"]
             text = "".join(s["text"] for s in flow["composite_segments"])
@@ -87,6 +116,23 @@ def validate_reading_artifact(name, artifact):
             "statement must occur once on final page",
         )
         for page in pages:
+            if page["warning_region_mpt"] is not None:
+                margin = artifact["flow_spacing"]["vertical_padding_mpt"]
+                from academic_pdf_en_zh_reader.rendering.page_geometry import (
+                    A3_LANDSCAPE_HEIGHT_MPT,
+                )
+
+                safe_top = min(
+                    [block["bbox_mpt"][1] for block in page["blocks"]]
+                    + [A3_LANDSCAPE_HEIGHT_MPT - margin]
+                )
+                if page["blocks"]:
+                    safe_top -= artifact["flow_spacing"]["block_gap_mpt"]
+                require(
+                    page["warning_region_mpt"] == [margin, safe_top]
+                    and safe_top > margin,
+                    "statement region must be the complete final safe space",
+                )
             frames = {f["id"]: f for f in page["frames"]}
             require(len(frames) == len(page["frames"]), "duplicate target frame")
             for block in page["blocks"]:

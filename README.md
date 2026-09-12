@@ -12,7 +12,7 @@ Canonical repository: [chaohanxuanplus-a11y/academic-pdf-en-zh-reader](https://g
 
 ## Current status
 
-Version `0.2.0` provides continuous Chinese columns, contextual supplements and recoverable completion attempts. The maintainer identity, shared private
+Version `0.2.1` provides continuous Chinese columns with full-width front-matter notes, larger reading type and a centered final responsibility card. The maintainer identity, shared private
 contact, limited-purpose brand permission, and successful Windows production
 audit have been recorded in
 [`compliance/release-status.json`](compliance/release-status.json). This historical
@@ -42,7 +42,7 @@ responsibilities; the Skill does not fetch or automatically publish papers.
 
 ## Reading format
 
-The A3 landscape output preserves normalized English source pages on the left. Chinese title, abstract and keywords span the right panel; all remaining Chinese flows in two columns with paragraph vocabulary and contextual figure/table explanations. References remain untranslated. Fixed readable type, compact spacing and an unchanged final-page responsibility statement are required.
+The A3 landscape output preserves normalized English source pages on the left. Chinese title, abstract, keywords and their attached notes span the right panel; other Chinese and its notes flow in two columns. Body text is 11 pt, notes 10 pt, with 140% leading. References remain untranslated. The complete final responsibility card has a 72 pt logo and 12 pt warning text, centered in the remaining safe right panel. All source pages remain, including reference-only tails; no filler is added to their empty Chinese areas.
 
 Paragraph drafts are assembled programmatically. Default review focuses on difficult or flagged units. Verified extraction checkpoints and unaffected drafts survive recoverable local failures. Optional notes are removed before core content is allowed to exceed the body-page budget. See [runbook](references/runbook.md) and [product contract](references/product-contract.md).
 

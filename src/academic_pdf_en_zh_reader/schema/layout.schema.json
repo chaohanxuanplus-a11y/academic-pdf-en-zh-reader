@@ -55,7 +55,7 @@
       ],
       "properties": {
         "version": {
-          "const": 2
+          "const": 3
         },
         "horizontal_padding_mpt": {
           "type": "integer",
@@ -80,7 +80,7 @@
       }
     },
     "solver_contract_version": {
-      "const": 2
+      "const": 3
     },
     "solver_input_hash": {
       "$ref": "#/$defs/sha256"
@@ -99,7 +99,7 @@
       ],
       "properties": {
         "version": {
-          "const": 2
+          "const": 3
         },
         "max_pages": {
           "type": "integer",

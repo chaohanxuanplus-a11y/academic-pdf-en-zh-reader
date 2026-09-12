@@ -29,13 +29,13 @@ class LayoutComplexityError(LayoutSolverError):
 
 @dataclass(frozen=True, slots=True)
 class LayoutLimits:
-    version: int = 2
+    version: int = 3
     max_pages: int = 2_000
     max_lines: int = 1_000_000
     heading_with_next_lines: int = 2
 
     def __post_init__(self):
-        if self.version != 2 or any(
+        if self.version != 3 or any(
             type(v) is not int or v < 1 for v in asdict(self).values()
         ):
             raise LayoutSolverError("invalid layout limits")
@@ -89,11 +89,12 @@ def _paginate(graph, limits, *, warning_page=None):
             column, top, start_top = 0, margin_y, margin_y
 
     previous_uid = None
-    for content_id in graph["flow_order"]:
+    for flow_index, content_id in enumerate(graph["flow_order"]):
         flow = flows[content_id]
         content_kind = "unit" if content_id == flow["unit_id"] else "auxiliary"
         columns = flow["column_count"]
-        if columns != current_columns:
+        changed_columns = columns != current_columns
+        if changed_columns:
             # A spanning item starts below everything already placed on the page.
             top = max(
                 [page_height - b["bbox_mpt"][1] for b in pages[-1]["blocks"]] + [top]
@@ -101,6 +102,8 @@ def _paginate(graph, limits, *, warning_page=None):
             start_top, column, current_columns = top, 0, columns
         if previous_uid is not None and previous_uid != flow["unit_id"]:
             top += config["block_gap_mpt"]
+        if changed_columns:
+            start_top = top
         previous_uid = flow["unit_id"]
         lines, cursor = flow["lines"], 0
         while cursor < len(lines):
@@ -108,11 +111,19 @@ def _paginate(graph, limits, *, warning_page=None):
             if len(pages) == warning_page:
                 bottom += graph["warning_height_mpt"] + config["block_gap_mpt"]
             if cursor == 0 and flow["role"] == "heading":
-                reserve = (
-                    sum(line["line_height_mpt"] for line in lines)
-                    + limits.heading_with_next_lines * 13_000
-                    + config["block_gap_mpt"]
-                )
+                reserve = sum(line["line_height_mpt"] for line in lines)
+                remaining = limits.heading_with_next_lines
+                preceding_uid = flow["unit_id"]
+                for next_id in graph["flow_order"][flow_index + 1 :]:
+                    following = flows[next_id]
+                    if following["unit_id"] != preceding_uid:
+                        reserve += config["block_gap_mpt"]
+                    next_lines = following["lines"][:remaining]
+                    reserve += sum(line["line_height_mpt"] for line in next_lines)
+                    remaining -= len(next_lines)
+                    preceding_uid = following["unit_id"]
+                    if not remaining:
+                        break
                 if (
                     reserve <= page_height - margin_y - bottom
                     and top + reserve > page_height - bottom
@@ -210,10 +221,10 @@ def _pages_with_warning(graph, limits):
     )
     if pages[-1]["blocks"]:
         warning_top -= config["block_gap_mpt"]
-    pages[-1]["warning_region_mpt"] = [
-        warning_top - graph["warning_height_mpt"],
-        warning_top,
-    ]
+    warning_bottom = config["vertical_padding_mpt"]
+    if warning_top - warning_bottom < graph["warning_height_mpt"]:
+        raise LayoutInfeasibleError("statement exceeds the final safe region")
+    pages[-1]["warning_region_mpt"] = [warning_bottom, warning_top]
     return pages
 
 
@@ -232,7 +243,7 @@ def solve_layout(
     result = {
         "schema_version": "2.0.0",
         "artifact_kind": "layout",
-        "solver_contract_version": 2,
+        "solver_contract_version": 3,
         "line_mapping_version": 2,
         "solver_input_hash": sha256_canonical(
             {"graph": frame_graph, "limits": asdict(limits)}

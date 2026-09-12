@@ -35,19 +35,21 @@ def test_style_contract_freezes_document_wide_role_sizes() -> None:
         )
     )
 
-    assert contract.version == 2
+    assert contract.version == 3
     assert contract.style_for("body") == contract.style_for("abstract")
-    assert contract.style_for("body").size_mpt == 10_000
+    assert contract.style_for("body").size_mpt == 11_000
+    assert contract.style_for("body").line_height_mpt == 15_400
+    assert contract.style_for("auxiliary").line_height_mpt == 14_000
     assert contract.style_for("body").font_role == "body"
     assert contract.style_for("title").font_role == "heading"
     assert contract.style_for("heading").font_role == "heading"
     assert contract.style_for("auxiliary").size_mpt == max(
-        9_000,
+        10_000,
         AUXILIARY_MIN_SIZE_MPT,
     )
     assert contract.style_for("auxiliary").size_mpt >= AUXILIARY_MIN_SIZE_MPT
     assert contract.ambiguity_size_mpt("title") == contract.style_for("title").size_mpt
-    assert contract.ambiguity_size_mpt("body") == 10_000
+    assert contract.ambiguity_size_mpt("body") == 11_000
 
     with pytest.raises(FrozenInstanceError):
         contract.version = 2  # type: ignore[misc]

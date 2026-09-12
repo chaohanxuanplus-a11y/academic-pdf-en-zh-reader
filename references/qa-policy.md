@@ -9,4 +9,6 @@ Programs check source/translation coverage and bindings, numbers/units/citations
 
 Inspect first/last/flagged pages, plus a useful figure sample. Inspect figure contents for interpretation independently of final layout sampling. Do not repeat full-paper translation or full visual inspection for a local text correction; rerender affected output and complete the necessary final byte checks.
 
+On the first page and any front-matter continuation, verify notes share the title/abstract/keywords width and body begins only after their groups. Check 11 pt body and 10 pt notes with 140% leading, actual heading-following line space, and avoidable early column/page breaks. On the final page verify the complete card is centered in its safe remaining right panel, its logo is 72 pt and its 12 pt warning is larger than body text. Source-only tails and space around the centered card can remain empty.
+
 Known local failures are repair work. Genuine missing input or a persistent unresolved safety/content defect blocks final delivery. Runtime/release audits belong to environment setup or publishing, not every paper. Report only actionable failures and actual checks; internal success logs are not the user's deliverable.

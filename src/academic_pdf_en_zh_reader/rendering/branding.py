@@ -95,7 +95,7 @@ def _validated_brand_layout(value: object, *, code: str) -> dict[str, int]:
         + 4 * layout["section_gap_mpt"]
     )
     if (
-        layout["policy_version"] != 1
+        layout["policy_version"] != 2
         or panel_width <= 0
         or panel_height <= 0
         or layout["card_min_width_mpt"] > layout["card_max_width_mpt"]
