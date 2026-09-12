@@ -168,7 +168,7 @@ def test_brand_card_height_includes_the_logo_to_text_section_gap() -> None:
     manifest, _asset_path, manifest_hash = load_brand_manifest()
     constrained = deepcopy(manifest)
     constrained["layout"]["card_padding_y_mpt"] = 1
-    constrained["layout"]["section_gap_mpt"] = 100_000
+    constrained["layout"]["section_gap_mpt"] = 50_000
 
     frozen = freeze_brand_block(
         output_page_number=1,

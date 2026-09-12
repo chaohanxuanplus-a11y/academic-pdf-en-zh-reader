@@ -590,7 +590,7 @@ def test_finish_accepts_only_an_extracted_ledger(tmp_path: Path) -> None:
     assert not fixture.output_pdf.exists()
 
 
-def test_finish_advances_every_stage_and_uses_non_hardcoded_typography(
+def test_finish_advances_every_stage_and_binds_current_typography(
     tmp_path: Path,
 ) -> None:
     fixture = _finish_fixture(tmp_path, job_id="finish-debug-success")
@@ -618,7 +618,7 @@ def test_finish_advances_every_stage_and_uses_non_hardcoded_typography(
     )
 
     expected_style = _style_contract_payload(_style_contract_from_source(source))
-    assert expected_style["body_source_size_mpt"] == 10_000
+    assert expected_style["body_source_size_mpt"] == 11_000
     assert receipt["policy_hashes"]["style-contract"] == sha256_canonical(
         expected_style
     )

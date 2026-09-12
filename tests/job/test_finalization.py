@@ -374,6 +374,10 @@ def test_receipt_rejects_synchronized_one_mpt_layout_tamper() -> None:
         block["bbox_mpt"][3] -= 1
         for line in block["lines"]:
             line["baseline_y_mpt"] -= 1
+    if page["warning_region_mpt"] is not None:
+        with pytest.raises(ValueError, match="complete final safe space"):
+            validate_artifact("layout", tampered_layout)
+        page["warning_region_mpt"][1] -= 1
     validate_artifact("layout", tampered_layout)
 
     forged_receipt = deepcopy(result.receipt)
