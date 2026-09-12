@@ -535,7 +535,7 @@ def test_finish_uses_fixed_chinese_type_without_source_size_gate():
     )
 
     source, *_ = _parents("a" * 64, source_font_size_mpt=None)
-    assert _style_contract_from_source(source).style_for("body").size_mpt == 10000
+    assert _style_contract_from_source(source).style_for("body").size_mpt == 11000
 
 
 def test_finish_rejects_valid_source_bytes_that_no_longer_match_extracted_ledger(
