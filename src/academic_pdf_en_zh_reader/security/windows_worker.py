@@ -2144,8 +2144,10 @@ def _create_restricted_token() -> tuple[object, list[str], str]:
     source = _open_current_token(0x0001 | 0x0002 | 0x0008 | 0x0080 | 0x0100)
     restricted = wintypes.HANDLE()
     try:
-        source_privileges = _enabled_privileges(source)
+        # Unrestricted source privilege names are unused. Avoid starting the
+        # privilege lookup service before DISABLE_MAX_PRIVILEGE is applied.
         if _advapi32.IsTokenRestricted(source):
+            source_privileges = _enabled_privileges(source)
             unexpected = set(source_privileges) - _ALLOWED_ENABLED_PRIVILEGES
             if unexpected:
                 raise SandboxUnavailableError(
@@ -2173,19 +2175,21 @@ def _create_restricted_token() -> tuple[object, list[str], str]:
             )
     finally:
         _close_handle(source)
-    if not _advapi32.IsTokenRestricted(restricted):
+    try:
+        if not _advapi32.IsTokenRestricted(restricted):
+            raise SandboxUnavailableError(
+                "CreateRestrictedToken returned a non-restricted token"
+            )
+        privileges = _enabled_privileges(restricted)
+        unexpected = set(privileges) - _ALLOWED_ENABLED_PRIVILEGES
+        if unexpected:
+            raise SandboxUnavailableError(
+                "restricted token retained unexpected enabled privileges: "
+                + ", ".join(sorted(unexpected))
+            )
+    except BaseException:
         _close_handle(restricted)
-        raise SandboxUnavailableError(
-            "CreateRestrictedToken returned a non-restricted token"
-        )
-    privileges = _enabled_privileges(restricted)
-    unexpected = set(privileges) - _ALLOWED_ENABLED_PRIVILEGES
-    if unexpected:
-        _close_handle(restricted)
-        raise SandboxUnavailableError(
-            "restricted token retained unexpected enabled privileges: "
-            + ", ".join(sorted(unexpected))
-        )
+        raise
     return restricted, privileges, origin
 
 

@@ -8,6 +8,8 @@ import gc
 import json
 import os
 import stat
+import subprocess
+import sys
 from contextlib import suppress
 from pathlib import Path
 from types import SimpleNamespace
@@ -731,16 +733,25 @@ def test_privilege_check_recognizes_only_exact_change_notify_luid_without_lookup
 
 
 def test_change_notify_well_known_luid_matches_the_host_windows_api() -> None:
-    api = ctypes.WinDLL("advapi32", use_last_error=True).LookupPrivilegeValueW
-    api.argtypes = [
-        windows_worker.wintypes.LPCWSTR,
-        windows_worker.wintypes.LPCWSTR,
-        ctypes.POINTER(windows_worker._LUID),
-    ]
-    api.restype = windows_worker.wintypes.BOOL
-    value = windows_worker._LUID()
-    assert api(None, "SeChangeNotifyPrivilege", ctypes.byref(value))
-    assert (value.LowPart, value.HighPart) == (23, 0)
+    # The lookup starts Windows RPC housekeeping: its idle cleanup can add a
+    # thread/event after this test ends. Keep that unrelated activity out of
+    # the process whose subsequent worker tests require zero handle growth.
+    completed = subprocess.run(
+        [
+            sys.executable,
+            "-I",
+            "-B",
+            str(Path(__file__).with_name("privilege_value_probe.py")),
+        ],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        timeout=15,
+        check=True,
+        close_fds=True,
+        creationflags=subprocess.CREATE_NO_WINDOW,
+    )
+    assert json.loads(completed.stdout) == {"low_part": 23, "high_part": 0}
 
 
 @pytest.mark.parametrize(
@@ -820,8 +831,14 @@ def test_ordinary_token_dispatch_does_not_depend_on_restricted_parent(
             "restricted_code",
         )
 
+    def enabled_privileges(token: object) -> list[str]:
+        # An unrestricted source's names are unused. Query only the token
+        # that must satisfy the worker's enabled-privilege allowlist.
+        assert getattr(token, "value", token) == restricted.value
+        return []
+
     monkeypatch.setattr(windows_worker, "_open_current_token", lambda _access: source)
-    monkeypatch.setattr(windows_worker, "_enabled_privileges", lambda _token: [])
+    monkeypatch.setattr(windows_worker, "_enabled_privileges", enabled_privileges)
     monkeypatch.setattr(windows_worker, "_close_handle", lambda _handle: None)
     monkeypatch.setattr(
         windows_worker._advapi32,
@@ -843,6 +860,94 @@ def test_ordinary_token_dispatch_does_not_depend_on_restricted_parent(
         "RestrictingSids=current_user,logon_sid,builtin_users,everyone,restricted_code"
         in origin
     )
+
+
+@pytest.mark.parametrize("failure", ["query_error", "unexpected", "not_restricted"])
+def test_created_token_validation_failure_closes_both_owned_handles(
+    monkeypatch: pytest.MonkeyPatch,
+    failure: str,
+) -> None:
+    source = windows_worker.wintypes.HANDLE(101)
+    restricted = windows_worker.wintypes.HANDLE(202)
+    closed: list[int] = []
+
+    def enabled_privileges(token: object) -> list[str]:
+        if getattr(token, "value", token) == source.value:
+            return []
+        if failure == "query_error":
+            raise SandboxUnavailableError("privilege query failed")
+        return ["SeDebugPrivilege"]
+
+    monkeypatch.setattr(windows_worker, "_open_current_token", lambda _access: source)
+    monkeypatch.setattr(windows_worker, "_enabled_privileges", enabled_privileges)
+    monkeypatch.setattr(
+        windows_worker,
+        "_close_handle",
+        lambda handle: closed.append(getattr(handle, "value", handle)),
+    )
+    monkeypatch.setattr(
+        windows_worker._advapi32,
+        "IsTokenRestricted",
+        lambda token: (
+            getattr(token, "value", token) == restricted.value
+            and failure != "not_restricted"
+        ),
+    )
+    monkeypatch.setattr(
+        windows_worker,
+        "_create_restricted_token_from_unrestricted_source",
+        lambda _source: (restricted, ("current_user",)),
+    )
+
+    with pytest.raises(SandboxUnavailableError):
+        windows_worker._create_restricted_token()
+
+    assert closed == [source.value, restricted.value]
+
+
+@pytest.mark.parametrize("unexpected_at", [None, "source", "duplicate"])
+def test_inherited_token_checks_both_source_and_duplicate_privileges(
+    monkeypatch: pytest.MonkeyPatch,
+    unexpected_at: str | None,
+) -> None:
+    source = windows_worker.wintypes.HANDLE(101)
+    duplicate = windows_worker.wintypes.HANDLE(202)
+    queried: list[int] = []
+    closed: list[int] = []
+
+    def enabled_privileges(token: object) -> list[str]:
+        value = getattr(token, "value", token)
+        queried.append(value)
+        role = "source" if value == source.value else "duplicate"
+        return [
+            "SeDebugPrivilege" if role == unexpected_at else "SeChangeNotifyPrivilege"
+        ]
+
+    def duplicate_token(*args):
+        args[-1]._obj.value = duplicate.value
+        return True
+
+    monkeypatch.setattr(windows_worker, "_open_current_token", lambda _access: source)
+    monkeypatch.setattr(windows_worker, "_enabled_privileges", enabled_privileges)
+    monkeypatch.setattr(
+        windows_worker,
+        "_close_handle",
+        lambda handle: closed.append(getattr(handle, "value", handle)),
+    )
+    monkeypatch.setattr(windows_worker._advapi32, "IsTokenRestricted", lambda _: True)
+    monkeypatch.setattr(windows_worker._advapi32, "DuplicateTokenEx", duplicate_token)
+
+    if unexpected_at is not None:
+        with pytest.raises(SandboxUnavailableError, match="unexpected"):
+            windows_worker._create_restricted_token()
+    else:
+        token, privileges, origin = windows_worker._create_restricted_token()
+        assert token.value == duplicate.value
+        assert privileges == ["SeChangeNotifyPrivilege"]
+        assert origin == "inherited_restricted_token_duplicated"
+
+    assert queried == ([101] if unexpected_at == "source" else [101, 202])
+    assert closed == ([101, 202] if unexpected_at == "duplicate" else [101])
 
 
 def test_create_process_failure_is_fail_closed_and_closes_handles(
