@@ -29,6 +29,27 @@ def _reference_plan() -> tuple[dict[str, object], ...]:
     return source, graph, layout, plan
 
 
+def test_statement_clause_separators_become_explicit_line_breaks():
+    manifest, _, manifest_hash = load_brand_manifest()
+    _, _, runs = freeze_brand_block(
+        output_page_number=1,
+        start_draw_order=0,
+        manifest=manifest,
+        manifest_sha256=manifest_hash,
+    )
+    lines = {}
+    for run in runs:
+        if run["style_id"] == "brand:disclaimer":
+            lines.setdefault(run["line_index"], []).append(run["text"])
+    rendered = ["".join(parts) for parts in lines.values()]
+    for before, after in (
+        ("输入论文由用户自行合法取得并提供", "本项目不提供"),
+        ("项目许可证仅覆盖项目代码与文档", "不授予对原论文"),
+    ):
+        index = rendered.index(before)
+        assert rendered[index + 1].startswith(after)
+
+
 @pytest.mark.parametrize("empty_last_panel", [False, True])
 def test_large_statement_card_is_centered_in_all_remaining_safe_space(empty_last_panel):
     *_, graph, layout = build_render_fixture(include_reference_page=empty_last_panel)

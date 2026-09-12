@@ -90,7 +90,7 @@ def _validated_brand_layout(value: object, *, code: str) -> dict[str, int]:
         + layout["brand_en_line_height_mpt"]
         + layout["skill_line_height_mpt"]
         + layout["github_line_height_mpt"]
-        + 6 * layout["disclaimer_line_height_mpt"]
+        + 8 * layout["disclaimer_line_height_mpt"]
         + layout["brand_pair_gap_mpt"]
         + 4 * layout["section_gap_mpt"]
     )
@@ -154,7 +154,7 @@ def load_brand_manifest(
         or not isinstance(layout, dict)
         or any(not isinstance(item, str) or not item for item in required_text)
         or not isinstance(disclaimer_lines, list)
-        or len(disclaimer_lines) != 6
+        or len(disclaimer_lines) != 8
         or any(not isinstance(item, str) or not item for item in disclaimer_lines)
     ):
         raise OverlayPlanError("BRAND_ASSET_INVALID", "brand manifest is incomplete")
