@@ -113,6 +113,7 @@ def test_figure_evidence_must_match_the_bound_source_slice() -> None:
 
 def test_frozen_graphic_evidence_requires_an_upstream_record_verifier() -> None:
     units, translation, review = make_bundle([("figure-caption", "Figure 1", "图1")])
+    style = build_style_contract((FontSizeSample(10_000, 100),))
     evidence = FrozenObjectEvidence.from_text(
         source_artifact_hash="b" * 64,
         object_id="graphic-p1-7",
@@ -137,7 +138,7 @@ def test_frozen_graphic_evidence_requires_an_upstream_record_verifier() -> None:
             translation,
             figure_candidates=(candidate,),
             teaching_candidates=(),
-            auxiliary_size_mpt=9_000,
+            auxiliary_size_mpt=style.style_for("auxiliary").size_mpt,
             trial_layout=lambda _: LayoutTrialResult(True, 0, 1, 1),
         )
 
@@ -146,7 +147,7 @@ def test_frozen_graphic_evidence_requires_an_upstream_record_verifier() -> None:
         translation,
         figure_candidates=(candidate,),
         teaching_candidates=(),
-        auxiliary_size_mpt=9_000,
+        auxiliary_size_mpt=style.style_for("auxiliary").size_mpt,
         trial_layout=lambda _: LayoutTrialResult(True, 0, 1, 1),
         verify_frozen_evidence=lambda record: record.object_id == "graphic-p1-7",
     )
@@ -156,7 +157,6 @@ def test_frozen_graphic_evidence_requires_an_upstream_record_verifier() -> None:
         translation=translation,
         review=review,
     )
-    style = build_style_contract((FontSizeSample(10_000, 100),))
     with pytest.raises(AnnotationValidationError, match="upstream verifier"):
         validate_annotations_against_inputs(units, translation, review, artifact, style)
     validate_annotations_against_inputs(

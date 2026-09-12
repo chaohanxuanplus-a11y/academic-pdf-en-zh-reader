@@ -25,6 +25,7 @@ from .conftest import make_bundle
 
 def test_selection_is_stable_under_candidate_input_order() -> None:
     units, translation, review = make_bundle([("body", "alpha beta", "阿尔法贝塔")])
+    style = build_style_contract((FontSizeSample(10_000, 100),))
     first = TeachingCandidate(
         key="alpha",
         english_original="alpha",
@@ -48,7 +49,7 @@ def test_selection_is_stable_under_candidate_input_order() -> None:
         translation,
         figure_candidates=(),
         teaching_candidates=(first, second),
-        auxiliary_size_mpt=9_000,
+        auxiliary_size_mpt=style.style_for("auxiliary").size_mpt,
         trial_layout=fit,
     )
     b = select_orange_annotations(
@@ -56,11 +57,10 @@ def test_selection_is_stable_under_candidate_input_order() -> None:
         translation,
         figure_candidates=(),
         teaching_candidates=(second, first),
-        auxiliary_size_mpt=9_000,
+        auxiliary_size_mpt=style.style_for("auxiliary").size_mpt,
         trial_layout=fit,
     )
     assert a == b
-    style = build_style_contract((FontSizeSample(10_000, 100),))
     artifact = a.to_artifact(
         units=units,
         translation=translation,
