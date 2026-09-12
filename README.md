@@ -12,7 +12,7 @@ Canonical repository: [chaohanxuanplus-a11y/academic-pdf-en-zh-reader](https://g
 
 ## Current status
 
-Version `0.2.2` retains continuous Chinese columns with full-width front-matter notes, larger reading type and a centered final responsibility card. It closes restricted tokens when privilege validation raises and isolates the host privilege-value test from later handle-count checks. The maintainer identity, shared private
+Version `0.2.2` retains continuous Chinese columns with full-width front-matter notes, larger reading type and a centered final responsibility card. It closes restricted tokens when privilege validation raises, isolates the host privilege-value test from later handle-count checks, and verifies excluded event identity in the parent process. The maintainer identity, shared private
 contact, limited-purpose brand permission, and successful Windows production
 audit have been recorded in
 [`compliance/release-status.json`](compliance/release-status.json). This historical

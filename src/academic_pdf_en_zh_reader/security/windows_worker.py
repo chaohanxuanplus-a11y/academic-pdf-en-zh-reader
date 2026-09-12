@@ -2319,7 +2319,7 @@ def _make_inheritable_probe_event() -> object:
         None,
         True,
     )
-    event = _kernel32.CreateEventW(ctypes.byref(security), True, True, None)
+    event = _kernel32.CreateEventW(ctypes.byref(security), True, False, None)
     if not event:
         raise _win_error("CreateEventW")
     return event
@@ -3579,19 +3579,16 @@ def _excluded_event_evidence(handle_value: int) -> dict[str, object]:
                 "excluded": error in {6, 0xC0000008},
                 "error_code": error,
                 "event_handshake": False,
+                "event_signal_succeeded": False,
             }
-        reset = bool(_kernel32.ResetEvent(handle))
-        reset_error = ctypes.get_last_error() & 0xFFFFFFFF if not reset else 0
-        wait_after_reset = _kernel32.WaitForSingleObject(handle, 0) if reset else -1
-        set_again = bool(_kernel32.SetEvent(handle)) if reset else False
-        wait_after_set = _kernel32.WaitForSingleObject(handle, 0) if set_again else -1
-        inherited_event = bool(
-            reset and wait_after_reset == 258 and set_again and wait_after_set == 0
-        )
+        signaled = bool(_kernel32.SetEvent(handle))
+        signal_error = ctypes.get_last_error() & 0xFFFFFFFF if not signaled else 0
+        wait_after_set = _kernel32.WaitForSingleObject(handle, 0) if signaled else -1
         return {
-            "excluded": not inherited_event,
-            "error_code": reset_error,
-            "event_handshake": inherited_event,
+            "excluded": not signaled and signal_error in {6, 0xC0000008},
+            "error_code": signal_error,
+            "event_handshake": signaled and wait_after_set == 0,
+            "event_signal_succeeded": signaled,
         }
     except OSError as error:
         code = _normalized_windows_error(error)
@@ -3601,7 +3598,32 @@ def _excluded_event_evidence(handle_value: int) -> dict[str, object]:
             "excluded": True,
             "error_code": code,
             "event_handshake": False,
+            "event_signal_succeeded": False,
         }
+
+
+def _excluded_event_parent_evidence(
+    event: object, child_result: Mapping[str, object]
+) -> dict[str, object]:
+    # Handle numbers are process-local: a child may reuse this number for an
+    # unrelated event. Only signaling our still-open parent event proves that
+    # the child's handle actually refers to the excluded object.
+    parent_wait = _kernel32.WaitForSingleObject(event, 0)
+    signaled = child_result.get("event_signal_succeeded") is True
+    invalid = (
+        child_result.get("excluded") is True
+        and child_result.get("error_code") in {6, 0xC0000008}
+        and child_result.get("event_signal_succeeded") is False
+    )
+    verified_attempt = invalid or (signaled and child_result.get("error_code") == 0)
+    return {
+        **child_result,
+        "child_handle_excluded": child_result.get("excluded"),
+        "parent_event_wait_result": parent_wait,
+        "parent_event_signaled": parent_wait == 0,
+        "handle_value_reused": parent_wait == 258 and signaled,
+        "excluded": parent_wait == 258 and verified_attempt,
+    }
 
 
 def _probe_case(
@@ -5338,9 +5360,11 @@ def run_security_probe() -> dict[str, object]:
                         ),
                         copied.root,
                     )
+                    excluded_result = _excluded_event_parent_evidence(
+                        excluded_event, excluded_handle.response.result or {}
+                    )
                 finally:
                     _close_handle(excluded_event)
-                excluded_result = excluded_handle.response.result or {}
                 minimum["handle_allowlist"] = bool(excluded_result.get("excluded"))
                 provenance["handle_allowlist_evidence"] = excluded_result
                 record_handles("after_handle_allowlist")

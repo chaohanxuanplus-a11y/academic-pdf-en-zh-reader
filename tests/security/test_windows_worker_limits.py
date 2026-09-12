@@ -229,6 +229,82 @@ def test_handle_allowlist_probe_distinguishes_event_from_invalid_handle(
     assert excluded["error_code"] == 0xC0000008
 
 
+@pytest.mark.parametrize("same_event", [False, True])
+def test_allowlist_probe_verifies_parent_event_identity(same_event: bool) -> None:
+    parent_event = windows_worker._make_inheritable_probe_event()
+    other_event = windows_worker._make_inheritable_probe_event()
+    try:
+        assert windows_worker._kernel32.WaitForSingleObject(parent_event, 0) == 258
+        observed = parent_event if same_event else other_event
+        child = windows_worker._excluded_event_evidence(
+            windows_worker._handle_value(observed)
+        )
+        evidence = windows_worker._excluded_event_parent_evidence(parent_event, child)
+        assert evidence["excluded"] is (not same_event)
+        assert evidence["event_signal_succeeded"] is True
+        assert evidence["parent_event_signaled"] is same_event
+        assert evidence["handle_value_reused"] is (not same_event)
+    finally:
+        windows_worker._close_handle(other_event)
+        windows_worker._close_handle(parent_event)
+
+
+@pytest.mark.parametrize("inherit_event", [False, True])
+def test_allowlist_probe_detects_a_real_inherited_event(
+    workspace: Path,
+    restricted_job_adapter: None,
+    monkeypatch: pytest.MonkeyPatch,
+    inherit_event: bool,
+) -> None:
+    event = windows_worker._make_inheritable_probe_event()
+    original = windows_worker._prepare_process_attributes
+
+    def attributes(handles, appcontainer):
+        # Positive leak control: deliberately add only this owned test event.
+        return original(handles + (event,), appcontainer)
+
+    try:
+        if inherit_event:
+            monkeypatch.setattr(
+                windows_worker, "_prepare_process_attributes", attributes
+            )
+        result = run_worker(
+            _request(
+                "excluded_inheritable_handle",
+                handle=windows_worker._handle_value(event),
+            ),
+            workspace,
+        )
+        evidence = windows_worker._excluded_event_parent_evidence(
+            event, result.response.result or {}
+        )
+        assert evidence["excluded"] is (not inherit_event)
+        assert evidence["parent_event_signaled"] is inherit_event
+    finally:
+        windows_worker._close_handle(event)
+
+
+@pytest.mark.parametrize(
+    ("child", "expected"),
+    [
+        ({}, False),
+        ({"excluded": True, "error_code": 5}, False),
+        ({"event_signal_succeeded": True, "error_code": 5}, False),
+        ({"excluded": True, "error_code": 6, "event_signal_succeeded": False}, True),
+        ({"excluded": True, "error_code": 6, "event_signal_succeeded": True}, False),
+    ],
+)
+def test_allowlist_probe_rejects_missing_or_contradictory_child_evidence(
+    child: dict[str, object], expected: bool
+) -> None:
+    event = windows_worker._make_inheritable_probe_event()
+    try:
+        evidence = windows_worker._excluded_event_parent_evidence(event, child)
+        assert evidence["excluded"] is expected
+    finally:
+        windows_worker._close_handle(event)
+
+
 def test_process_limit_probe_treats_invalid_popen_handle_as_denied(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

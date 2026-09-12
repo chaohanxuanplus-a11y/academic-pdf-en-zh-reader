@@ -37,3 +37,15 @@ privileges, a non-restricted result, and both inherited-token privilege checks.
 
 These changes are released as v0.2.2; v0.2.1 tags and asset bytes are preserved.
 The continuous layout and typography policies introduced in v0.2.1 are unchanged.
+
+The next full CI run passed the original handle-count assertions but exposed a
+separate ambiguity in the inheritance probe: the child's handle number could
+refer to its own unrelated event. Resetting and setting that event inside the
+child was insufficient to establish whether the parent's object was inherited.
+The probe now creates an initially unsignaled manual-reset event, asks the child
+to signal its candidate handle, and checks the still-open event in the parent.
+An unrelated child event leaves the parent's event unsignaled; an actually
+inherited event signals the parent and fails the allowlist gate. Missing,
+unexpected, or contradictory evidence still fails closed. Tests include a real
+process launched with the test event deliberately added to the inheritance list,
+as well as the normal three-handle list and deterministic unrelated-event cases.
